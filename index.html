@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#00A0AC" />
+<title>Solicitudes EPP</title>
+<link rel="manifest" href="manifest.json" />
+<link rel="icon" href="icons/icon-192.png" />
+<link rel="apple-touch-icon" href="icons/icon-192.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="EPP" />
+<style>
+  :root{
+    --teal:#00A0AC;
+    --teal-dark:#00838F;
+    --amber:#F5B301;
+    --green:#2E9E5B;
+    --orange:#E4572E;
+    --ink:#1e293b;
+    --muted:#64748b;
+    --line:#eef1f4;
+    --bg:#f1f5f9;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    background:var(--bg);
+    -webkit-tap-highlight-color:transparent;
+  }
+  #app{
+    max-width:430px;
+    margin:0 auto;
+    min-height:100vh;
+    background:#fff;
+    position:relative;
+    display:flex;
+    flex-direction:column;
+    box-shadow:0 0 40px rgba(0,0,0,.08);
+  }
+  header{
+    background:var(--teal);
+    padding:18px 16px 14px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+  }
+  header h1{color:#fff;font-size:20px;margin:0;font-weight:800;letter-spacing:-.2px;}
+  .icon-btn{background:none;border:none;padding:6px;cursor:pointer;display:flex;align-items:center;}
+  .badge-circle{width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;}
+
+  .refresh-row{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:10px 16px;border-bottom:1px solid var(--line);font-size:12px;color:var(--muted);
+  }
+  .refresh-row b{color:var(--ink);}
+  .refresh-btn{
+    display:flex;align-items:center;gap:5px;font-size:11px;font-weight:700;color:var(--muted);
+    background:#f1f5f9;border:none;border-radius:8px;padding:7px 10px;cursor:pointer;
+  }
+  .refresh-btn svg{transition:transform .5s;}
+  .refresh-btn.spin svg{animation:spin .6s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  .tabs{display:grid;grid-template-columns:repeat(4,1fr);}
+  .tab{
+    border:none;padding:12px 4px;display:flex;flex-direction:column;align-items:center;gap:5px;
+    color:#fff;cursor:pointer;position:relative;opacity:.85;font-family:inherit;
+  }
+  .tab.active{opacity:1;}
+  .tab.active::after{content:"";position:absolute;bottom:0;left:0;right:0;height:3px;background:rgba(255,255,255,.85);}
+  .tab span{font-size:9.5px;font-weight:800;text-align:center;line-height:1.2;}
+  .tab .count{
+    position:absolute;top:4px;right:8px;background:rgba(255,255,255,.92);
+    border-radius:50%;width:16px;height:16px;font-size:9px;font-weight:800;
+    display:flex;align-items:center;justify-content:center;
+  }
+
+  main{flex:1;padding:16px;min-height:340px;}
+  .empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding-top:70px;color:#94a3b8;}
+  .empty span{font-size:14px;font-weight:600;}
+
+  .card{border:1px solid var(--line);border-radius:16px;padding:12px;margin-bottom:10px;box-shadow:0 1px 2px rgba(0,0,0,.03);}
+  .card-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;}
+  .worker{display:flex;align-items:center;gap:6px;font-size:14px;font-weight:700;color:var(--ink);}
+  .date{font-size:10px;color:#94a3b8;}
+  .dept{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);margin-bottom:6px;}
+  .items{font-size:12px;color:#475569;margin:0 0 8px 0;padding-left:0;list-style:none;}
+  .items li{padding:1px 0;}
+  .actions{display:flex;gap:8px;}
+  .actions button{flex:1;border:none;color:#fff;font-weight:700;font-size:12px;padding:8px;border-radius:10px;cursor:pointer;}
+
+  footer.tabbar{display:flex;flex-direction:column;align-items:center;gap:3px;padding:10px 0 14px;color:var(--teal);font-size:11px;font-weight:700;}
+
+  .fab{
+    position:fixed;bottom:26px;
+    width:56px;height:56px;border-radius:50%;background:var(--teal);
+    border:none;color:#fff;font-size:28px;box-shadow:0 6px 16px rgba(0,160,172,.4);
+    display:flex;align-items:center;justify-content:center;cursor:pointer;
+  }
+  #fab-slot{position:sticky; bottom:0; display:flex; justify-content:flex-end; padding:0 20px 20px; pointer-events:none;}
+  #fab-slot button{pointer-events:auto;}
+
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:flex-end;justify-content:center;z-index:50;}
+  .sheet{background:#fff;width:100%;max-width:430px;border-radius:24px 24px 0 0;padding:18px 16px 26px;max-height:88vh;overflow-y:auto;}
+  .sheet-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
+  .sheet-head h2{font-size:16px;margin:0;color:var(--ink);}
+  label{font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:4px;}
+  input[type=text]{width:100%;border:1px solid #e2e8f0;border-radius:12px;padding:10px 12px;font-size:14px;margin-bottom:12px;font-family:inherit;}
+  input[type=text]:focus{outline:none;border-color:var(--teal);}
+
+  .item-row{display:flex;align-items:center;justify-content:space-between;border:1px solid #e2e8f0;border-radius:12px;padding:9px 10px;margin-bottom:8px;}
+  .item-row.active{border-color:#5fc4cc;background:#eafafb;}
+  .item-row .name{font-size:13px;font-weight:600;color:#334155;}
+  .item-row .stock{font-size:10px;color:#94a3b8;}
+  .qty-ctrl{display:flex;align-items:center;gap:8px;}
+  .qty-ctrl button{width:24px;height:24px;border-radius:50%;border:none;background:#f1f5f9;cursor:pointer;font-weight:700;}
+  .qty-ctrl span{font-size:13px;font-weight:700;width:16px;text-align:center;}
+
+  .submit-btn{width:100%;border:none;color:#fff;font-weight:700;padding:13px;border-radius:14px;font-size:14px;cursor:pointer;margin-top:6px;}
+  .submit-btn:disabled{background:#cbd5e1!important;cursor:not-allowed;}
+
+  .side-menu{position:fixed;inset:0;z-index:60;display:flex;}
+  .side-panel{width:250px;height:100%;background:#fff;padding:16px;display:flex;flex-direction:column;box-shadow:4px 0 20px rgba(0,0,0,.1);}
+  .side-panel .close{align-self:flex-end;}
+  .menu-item{display:flex;align-items:center;gap:10px;padding:11px 8px;border-radius:12px;border:none;background:none;width:100%;text-align:left;font-size:13px;font-weight:600;color:#334155;cursor:pointer;}
+  .menu-item:hover{background:#f8fafc;}
+  .role-box{background:#f8fafc;border-radius:12px;padding:10px;margin-top:6px;}
+  .role-box .label{font-size:10px;color:#94a3b8;margin-bottom:8px;display:block;}
+  .role-toggle{display:flex;gap:6px;}
+  .role-toggle button{flex:1;font-size:11px;font-weight:700;padding:8px 0;border-radius:9px;border:1px solid #e2e8f0;background:#fff;color:#64748b;cursor:pointer;}
+  .role-toggle button.active{background:var(--teal);color:#fff;border-color:transparent;}
+  .side-backdrop{flex:1;background:rgba(0,0,0,.3);}
+
+  .install-banner{
+    position:fixed;left:50%;transform:translateX(-50%);bottom:14px;background:var(--ink);color:#fff;
+    font-size:12px;padding:10px 14px;border-radius:12px;display:flex;align-items:center;gap:10px;z-index:80;
+    max-width:390px;width:calc(100% - 32px);
+  }
+  .install-banner button{background:var(--teal);border:none;color:#fff;font-weight:700;font-size:11px;padding:7px 10px;border-radius:8px;}
+  .install-banner .dismiss{background:none;color:#cbd5e1;padding:4px;}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+/* ---------- Config ---------- */
+const STATUS = {
+  espera:        { label:"En espera",     color:"var(--amber)",  hex:"#F5B301" },
+  autorizadas:   { label:"Autorizadas",   color:"var(--teal)",   hex:"#0097A7" },
+  finalizadas:   { label:"Finalizadas",   color:"var(--green)",  hex:"#2E9E5B" },
+  no_realizados: { label:"No realizados", color:"var(--orange)", hex:"#E4572E" },
+};
+const STATUS_ORDER = ["espera","autorizadas","finalizadas","no_realizados"];
+const SUPERVISOR_PIN = "2468"; // cámbialo por el PIN que quieras usar en tu equipo
+
+const ICONS = {
+  clock: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>`,
+  key: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6M15.5 7.5l3 3L22 7l-3-3"/></svg>`,
+  check: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M18 6 7 17l-5-5"/><path d="m22 10-7.5 7.5L13 16"/></svg>`,
+  trash: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6"/></svg>`,
+  menu: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>`,
+  refresh: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></svg>`,
+  plus: `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>`,
+  fileText: `<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></svg>`,
+  fileTextSmall: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></svg>`,
+  x: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>`,
+  user: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`,
+  building: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/></svg>`,
+  package: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00A0AC" stroke-width="2"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg>`,
+  shield: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></svg>`,
+};
+
+/* ---------- State (persisted) ---------- */
+const LS_KEY = "epp_app_state_v1";
+
+const DEFAULT_STATE = {
+  role: "trabajador",
+  tab: "espera",
+  lastUpdate: nowStamp(),
+  inventory: [
+    { id:"c1", name:"Casco de seguridad", unit:"unidad", stock:42 },
+    { id:"c2", name:"Guantes de nitrilo", unit:"par", stock:120, optionLabel:"Talla", options:["S","M","L","XL"] },
+    { id:"c3", name:"Lentes de protección", unit:"unidad", stock:65 },
+    { id:"c4", name:"Chaleco reflectante", unit:"unidad", stock:30, optionLabel:"Talla", options:["S","M","L","XL"] },
+    { id:"c5", name:"Botas de seguridad", unit:"par", stock:18, optionLabel:"Número de calzado", options:["36","37","38","39","40","41","42","43","44"] },
+    { id:"c6", name:"Mascarilla N95", unit:"caja", stock:54 },
+    { id:"c7", name:"Arnés de seguridad", unit:"unidad", stock:9, optionLabel:"Talla", options:["S","M","L"] },
+    { id:"c8", name:"Protector auditivo", unit:"par", stock:40 },
+    { id:"c9", name:"Pantalón de trabajo", unit:"unidad", stock:25, optionLabel:"Talla", options:["S","M","L","XL","XXL"] },
+  ],
+  solicitudes: [
+    { id:"s1", worker:"Marco Reyes", department:"Mantenimiento", items:[{id:"c1",qty:1},{id:"c2",qty:2,option:"L"}], status:"espera", date:"23-07-2026 09:12" },
+    { id:"s2", worker:"Lucía Fernández", department:"Producción", items:[{id:"c4",qty:1,option:"M"},{id:"c8",qty:1}], status:"autorizadas", date:"22-07-2026 16:40" },
+    { id:"s3", worker:"Iván Castro", department:"Logística", items:[{id:"c5",qty:1,option:"41"}], status:"finalizadas", date:"20-07-2026 11:05" },
+  ],
+};
+
+function nowStamp(){
+  const d = new Date();
+  const p = n => String(n).padStart(2,"0");
+  return `${p(d.getDate())}-${p(d.getMonth()+1)}-${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
+function loadState(){
+  try{
+    const raw = localStorage.getItem(LS_KEY);
+    if(!raw) return structuredClone(DEFAULT_STATE);
+    const parsed = JSON.parse(raw);
+    return { ...structuredClone(DEFAULT_STATE), ...parsed };
+  }catch(e){
+    return structuredClone(DEFAULT_STATE);
+  }
+}
+function saveState(){ localStorage.setItem(LS_KEY, JSON.stringify(state)); }
+
+let state = loadState();
+let menuOpen = false, showInventory = false, showForm = false, spinning = false;
+let formSelection = {}; // id -> { qty, option } (transient, not persisted)
+let formWorker = "", formDept = "";
+let authOpen = false, authError = "", authInput = "";
+
+/* ---------- Helpers ---------- */
+function itemName(id){ return state.inventory.find(i=>i.id===id)?.name ?? id; }
+function counts(){
+  const c = { espera:0, autorizadas:0, finalizadas:0, no_realizados:0 };
+  state.solicitudes.forEach(s => c[s.status] = (c[s.status]||0)+1);
+  return c;
+}
+
+/* ---------- Actions ---------- */
+function refresh(){
+  spinning = true; render();
+  setTimeout(()=>{ state.lastUpdate = nowStamp(); spinning = false; saveState(); render(); }, 500);
+}
+function setTab(t){ state.tab = t; saveState(); render(); }
+function requestRole(r){
+  if(r === "supervisor" && state.role !== "supervisor"){
+    menuOpen = false;
+    authOpen = true; authError = ""; authInput = "";
+    render();
+    return;
+  }
+  state.role = r; saveState(); render();
+}
+function closeAuth(){ authOpen = false; authError=""; authInput=""; render(); }
+function submitAuth(){
+  if(authInput === SUPERVISOR_PIN){
+    state.role = "supervisor";
+    authOpen = false; authError = ""; authInput = "";
+    saveState(); render();
+  }else{
+    authError = "PIN incorrecto";
+    render();
+    document.getElementById("auth-input")?.focus();
+  }
+}
+function updateStatus(id, status){
+  state.solicitudes = state.solicitudes.map(s => s.id===id ? {...s, status} : s);
+  saveState(); render();
+}
+function openForm(){ showForm = true; formSelection = {}; formWorker=""; formDept=""; render(); }
+function closeForm(){ showForm = false; render(); }
+function toggleFormItem(id){
+  if(formSelection[id]){
+    delete formSelection[id];
+  }else{
+    const item = state.inventory.find(i=>i.id===id);
+    formSelection[id] = { qty:1, option: item?.options ? "" : null };
+  }
+  render();
+}
+function setFormQty(id, qty){ formSelection[id].qty = Math.max(1, qty); render(); }
+function setFormOption(id, option){ formSelection[id].option = option; render(); }
+function formIsComplete(){
+  const entries = Object.entries(formSelection);
+  if(entries.length===0) return false;
+  return entries.every(([id, sel]) => {
+    const item = state.inventory.find(i=>i.id===id);
+    if(item?.options) return !!sel.option;
+    return true;
+  });
+}
+function submitForm(){
+  if(!formWorker.trim() || !formDept.trim() || !formIsComplete()) return;
+  const items = Object.entries(formSelection).map(([id,sel])=>({
+    id, qty: sel.qty, ...(sel.option ? { option: sel.option } : {})
+  }));
+  state.solicitudes.unshift({
+    id: "s"+Date.now(), worker: formWorker.trim(), department: formDept.trim(),
+    items, status:"espera", date: nowStamp(),
+  });
+  state.tab = "espera";
+  showForm = false;
+  saveState(); render();
+}
+function adjustStock(id, delta){
+  state.inventory = state.inventory.map(i => i.id===id ? {...i, stock: Math.max(0, i.stock+delta)} : i);
+  saveState(); render();
+}
+
+/* ---------- Render ---------- */
+function render(){
+  const app = document.getElementById("app");
+  const c = counts();
+  const filtered = state.solicitudes.filter(s => s.status === state.tab);
+
+  app.innerHTML = `
+    <header>
+      <h1>Solicitudes enviadas</h1>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div class="badge-circle">${ICONS.shield}</div>
+        <button class="icon-btn" id="menu-btn">${ICONS.menu}</button>
+      </div>
+    </header>
+
+    <div class="refresh-row">
+      <span>Actualizar Datos: <b>${state.lastUpdate}</b></span>
+      <button class="refresh-btn ${spinning?'spin':''}" id="refresh-btn">${ICONS.refresh} ACTUALIZAR</button>
+    </div>
+
+    <div class="tabs">
+      ${STATUS_ORDER.map(key => {
+        const s = STATUS[key];
+        const icon = key==="espera"?ICONS.clock:key==="autorizadas"?ICONS.key:key==="finalizadas"?ICONS.check:ICONS.trash;
+        return `<button class="tab ${state.tab===key?'active':''}" style="background:${s.hex}" data-tab="${key}">
+          ${icon}
+          <span>${s.label.toUpperCase()}</span>
+          ${c[key]>0?`<span class="count" style="color:${s.hex}">${c[key]}</span>`:''}
+        </button>`;
+      }).join("")}
+    </div>
+
+    <main>
+      ${filtered.length===0 ? `
+        <div class="empty" style="color:${STATUS[state.tab].hex}">
+          ${ICONS.fileText}
+          <span style="color:#94a3b8;">Sin solicitudes</span>
+        </div>
+      ` : filtered.map(s => `
+        <div class="card">
+          <div class="card-top">
+            <div class="worker">${ICONS.user} ${s.worker}</div>
+            <div class="date">${s.date}</div>
+          </div>
+          <div class="dept">${ICONS.building} ${s.department}</div>
+          <ul class="items">${s.items.map(it=>`<li>• ${itemName(it.id)}${it.option?` (${it.option})`:''} × ${it.qty}</li>`).join("")}</ul>
+          ${state.role==="supervisor" && s.status==="espera" ? `
+            <div class="actions">
+              <button style="background:${STATUS.autorizadas.hex}" data-action="autorizadas" data-id="${s.id}">Autorizar</button>
+              <button style="background:${STATUS.no_realizados.hex}" data-action="no_realizados" data-id="${s.id}">Rechazar</button>
+            </div>` : ""}
+          ${state.role==="supervisor" && s.status==="autorizadas" ? `
+            <button style="background:${STATUS.finalizadas.hex};color:#fff;border:none;font-weight:700;font-size:12px;padding:8px;border-radius:10px;width:100%;cursor:pointer;" data-action="finalizadas" data-id="${s.id}">Marcar como entregado</button>` : ""}
+        </div>
+      `).join("")}
+    </main>
+
+    <footer class="tabbar">${ICONS.fileTextSmall} Solicitudes enviadas</footer>
+
+    ${state.role==="trabajador" ? `
+      <div id="fab-slot"><button class="fab" id="fab-btn">${ICONS.plus}</button></div>
+    ` : ""}
+
+    ${menuOpen ? renderSideMenu() : ""}
+    ${showForm ? renderFormModal() : ""}
+    ${showInventory ? renderInventoryModal() : ""}
+    ${authOpen ? renderAuthModal() : ""}
+  `;
+
+  attachEvents();
+}
+
+function renderSideMenu(){
+  return `
+  <div class="side-menu">
+    <div class="side-panel">
+      <button class="icon-btn close" id="menu-close" style="align-self:flex-end;">${ICONS.x}</button>
+      <button class="menu-item" id="open-inventory">${ICONS.package} Inventario de EPP</button>
+      <div class="role-box">
+        <span class="label">Rol activo</span>
+        <div class="role-toggle">
+          <button class="${state.role==='trabajador'?'active':''}" data-role="trabajador">Trabajador</button>
+          <button class="${state.role==='supervisor'?'active':''}" data-role="supervisor">Supervisor 🔒</button>
+        </div>
+      </div>
+    </div>
+    <div class="side-backdrop" id="side-backdrop"></div>
+  </div>`;
+}
+
+function renderFormModal(){
+  const canSubmit = formWorker.trim() && formDept.trim() && formIsComplete();
+  return `
+  <div class="overlay" id="form-overlay">
+    <div class="sheet">
+      <div class="sheet-head"><h2>Nueva solicitud</h2><button class="icon-btn" id="form-close">${ICONS.x}</button></div>
+      <label>Trabajador</label>
+      <input type="text" id="worker-input" placeholder="Nombre completo" value="${formWorker}" />
+      <label>Departamento</label>
+      <input type="text" id="dept-input" placeholder="Ej. Producción" value="${formDept}" />
+      <label>Equipo requerido</label>
+      ${state.inventory.map(item => {
+        const sel = formSelection[item.id];
+        const active = !!sel;
+        const needsOption = !!item.options;
+        const missingOption = active && needsOption && !sel.option;
+        return `
+        <div class="item-row ${active?'active':''}" style="flex-wrap:wrap;">
+          <div data-toggle="${item.id}" style="flex:1;cursor:pointer;">
+            <div class="name">${item.name}</div>
+            <div class="stock">Stock: ${item.stock} ${item.unit}</div>
+          </div>
+          ${active ? `
+            <div class="qty-ctrl">
+              <button data-qty-dec="${item.id}">−</button>
+              <span>${sel.qty}</span>
+              <button data-qty-inc="${item.id}">+</button>
+            </div>` : ""}
+          ${active && needsOption ? `
+            <div style="width:100%;margin-top:8px;">
+              <select data-option-select="${item.id}" style="width:100%;border:1px solid ${missingOption?'#E4572E':'#e2e8f0'};border-radius:10px;padding:8px;font-size:13px;font-family:inherit;">
+                <option value="" ${!sel.option?'selected':''} disabled>Selecciona ${item.optionLabel.toLowerCase()}</option>
+                ${item.options.map(o=>`<option value="${o}" ${sel.option===o?'selected':''}>${o}</option>`).join("")}
+              </select>
+            </div>` : ""}
+        </div>`;
+      }).join("")}
+      <button class="submit-btn" id="submit-form" style="background:${canSubmit?'#00A0AC':'#cbd5e1'}" ${canSubmit?'':'disabled'}>Enviar solicitud</button>
+    </div>
+  </div>`;
+}
+
+function renderAuthModal(){
+  return `
+  <div class="overlay" id="auth-overlay">
+    <div class="sheet" style="padding-bottom:30px;">
+      <div class="sheet-head"><h2>Acceso de supervisor</h2><button class="icon-btn" id="auth-close">${ICONS.x}</button></div>
+      <label>Ingresa el PIN de supervisor</label>
+      <input type="text" inputmode="numeric" id="auth-input" placeholder="••••" value="${authInput}" style="letter-spacing:4px;font-weight:700;" />
+      ${authError ? `<p style="color:#E4572E;font-size:12px;margin:-6px 0 10px;">${authError}</p>` : ""}
+      <button class="submit-btn" id="auth-submit" style="background:#00A0AC;">Entrar</button>
+    </div>
+  </div>`;
+}
+
+function renderInventoryModal(){
+  return `
+  <div class="overlay" id="inv-overlay">
+    <div class="sheet">
+      <div class="sheet-head"><h2 style="display:flex;align-items:center;gap:8px;">${ICONS.package} Inventario de EPP</h2><button class="icon-btn" id="inv-close">${ICONS.x}</button></div>
+      ${state.inventory.map(item => `
+        <div class="item-row">
+          <div>
+            <div class="name">${item.name}</div>
+            <div class="stock">${item.unit}</div>
+          </div>
+          ${state.role==="supervisor" ? `
+            <div class="qty-ctrl">
+              <button data-stock-dec="${item.id}">−</button>
+              <span>${item.stock}</span>
+              <button data-stock-inc="${item.id}">+</button>
+            </div>` : `<span style="font-weight:700;font-size:13px;color:#475569;">${item.stock}</span>`}
+        </div>
+      `).join("")}
+    </div>
+  </div>`;
+}
+
+function attachEvents(){
+  document.getElementById("menu-btn")?.addEventListener("click", ()=>{ menuOpen=true; render(); });
+  document.getElementById("menu-close")?.addEventListener("click", ()=>{ menuOpen=false; render(); });
+  document.getElementById("side-backdrop")?.addEventListener("click", ()=>{ menuOpen=false; render(); });
+  document.getElementById("refresh-btn")?.addEventListener("click", refresh);
+  document.getElementById("fab-btn")?.addEventListener("click", ()=>{ menuOpen=false; openForm(); });
+  document.getElementById("open-inventory")?.addEventListener("click", ()=>{ menuOpen=false; showInventory=true; render(); });
+  document.getElementById("inv-close")?.addEventListener("click", ()=>{ showInventory=false; render(); });
+  document.getElementById("inv-overlay")?.addEventListener("click", (e)=>{ if(e.target.id==="inv-overlay"){ showInventory=false; render(); } });
+  document.getElementById("form-close")?.addEventListener("click", closeForm);
+  document.getElementById("form-overlay")?.addEventListener("click", (e)=>{ if(e.target.id==="form-overlay") closeForm(); });
+  document.getElementById("submit-form")?.addEventListener("click", submitForm);
+
+  document.querySelectorAll("[data-tab]").forEach(el=>el.addEventListener("click", ()=>setTab(el.dataset.tab)));
+  document.querySelectorAll("[data-role]").forEach(el=>el.addEventListener("click", ()=>requestRole(el.dataset.role)));
+  document.querySelectorAll("[data-action]").forEach(el=>el.addEventListener("click", ()=>updateStatus(el.dataset.id, el.dataset.action)));
+  document.querySelectorAll("[data-toggle]").forEach(el=>el.addEventListener("click", ()=>toggleFormItem(el.dataset.toggle)));
+  document.querySelectorAll("[data-qty-inc]").forEach(el=>el.addEventListener("click", ()=>setFormQty(el.dataset.qtyInc, (formSelection[el.dataset.qtyInc]?.qty||1)+1)));
+  document.querySelectorAll("[data-qty-dec]").forEach(el=>el.addEventListener("click", ()=>setFormQty(el.dataset.qtyDec, (formSelection[el.dataset.qtyDec]?.qty||1)-1)));
+  document.querySelectorAll("[data-option-select]").forEach(el=>el.addEventListener("change", (e)=>setFormOption(el.dataset.optionSelect, e.target.value)));
+  document.querySelectorAll("[data-stock-inc]").forEach(el=>el.addEventListener("click", ()=>adjustStock(el.dataset.stockInc, 1)));
+  document.querySelectorAll("[data-stock-dec]").forEach(el=>el.addEventListener("click", ()=>adjustStock(el.dataset.stockDec, -1)));
+
+  const wi = document.getElementById("worker-input");
+  const di = document.getElementById("dept-input");
+  if(wi) wi.addEventListener("input", (e)=>{ formWorker = e.target.value; refreshSubmitState(); });
+  if(di) di.addEventListener("input", (e)=>{ formDept = e.target.value; refreshSubmitState(); });
+
+  document.getElementById("auth-close")?.addEventListener("click", closeAuth);
+  document.getElementById("auth-overlay")?.addEventListener("click", (e)=>{ if(e.target.id==="auth-overlay") closeAuth(); });
+  document.getElementById("auth-submit")?.addEventListener("click", submitAuth);
+  const ai = document.getElementById("auth-input");
+  if(ai){
+    ai.addEventListener("input", (e)=>{ authInput = e.target.value; });
+    ai.addEventListener("keydown", (e)=>{ if(e.key==="Enter") submitAuth(); });
+    ai.focus();
+  }
+}
+
+function refreshSubmitState(){
+  const btn = document.getElementById("submit-form");
+  if(!btn) return;
+  const canSubmit = formWorker.trim() && formDept.trim() && formIsComplete();
+  btn.disabled = !canSubmit;
+  btn.style.background = canSubmit ? "#00A0AC" : "#cbd5e1";
+}
+
+render();
+
+/* ---------- PWA install prompt ---------- */
+let deferredPrompt = null;
+window.addEventListener("beforeinstallprompt", (e)=>{
+  e.preventDefault();
+  deferredPrompt = e;
+  showInstallBanner();
+});
+function showInstallBanner(){
+  if(document.getElementById("install-banner")) return;
+  const b = document.createElement("div");
+  b.id = "install-banner";
+  b.className = "install-banner";
+  b.innerHTML = `<span>Instala esta app en tu pantalla de inicio</span>
+    <button id="install-yes">Instalar</button>
+    <button class="dismiss" id="install-no">✕</button>`;
+  document.body.appendChild(b);
+  document.getElementById("install-yes").onclick = async ()=>{
+    b.remove();
+    if(deferredPrompt){ deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt=null; }
+  };
+  document.getElementById("install-no").onclick = ()=> b.remove();
+}
+
+if("serviceWorker" in navigator){
+  window.addEventListener("load", ()=>{
+    navigator.serviceWorker.register("sw.js").catch(()=>{});
+  });
+}
+</script>
+</body>
+</html>
