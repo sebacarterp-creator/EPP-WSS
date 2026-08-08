@@ -137,7 +137,9 @@ let lastUpdate = "";
 let menuOpen = false, showInventory = false, showForm = false, showNotifs = false, spinning = false;
 let showExportModal = false, exportWorker = "";
 let formSelection = {}, formMotivo = "", formFotoFile = null, formFotoPreview = null;
-let newItemName = "", newItemUnit = "unidad", newItemStock = 0;
+const TALLA_OPTIONS = ["S","M","L","XL","XXL"];
+const NUMERO_OPTIONS = Array.from({length:12}, (_,i)=> String(34+i));
+let itemEditor = null; // null = cerrado; objeto con datos cuando está abierto
 
 function nowStamp(){
   const d = new Date(); const p = n => String(n).padStart(2,"0");
@@ -312,11 +314,54 @@ async function adjustStock(id, delta){
   await sb.from("epp_items").update({ stock: Math.max(0, item.stock + delta) }).eq("id", id);
   await loadInventory(); render();
 }
-async function addInventoryItem(){
-  if(!newItemName.trim()) return;
-  const id = newItemName.trim().toLowerCase().replace(/[^a-z0-9]+/g,"-").slice(0,40) + "-" + Date.now().toString(36);
-  await sb.from("epp_items").insert({ id, name:newItemName.trim(), unit:newItemUnit.trim()||"unidad", stock:Number(newItemStock)||0 });
-  newItemName = ""; newItemUnit = "unidad"; newItemStock = 0;
+
+function openNewItemEditor(){
+  itemEditor = { id:null, name:"", unit:"unidad", stock:0, requiresOption:false, optionType:"talla", selected:new Set() };
+  render();
+}
+function openEditItemEditor(id){
+  const item = inventory.find(i=>i.id===id);
+  const isNumero = (item.option_label||"").toLowerCase().includes("número") || (item.option_label||"").toLowerCase().includes("numero");
+  itemEditor = {
+    id: item.id, name: item.name, unit: item.unit, stock: item.stock,
+    requiresOption: !!item.options, optionType: isNumero ? "numero" : "talla",
+    selected: new Set(item.options || []),
+  };
+  render();
+}
+function closeItemEditor(){ itemEditor = null; render(); }
+function setEditorField(field, value){ itemEditor[field] = value; render(); }
+function setEditorRequires(val){ itemEditor.requiresOption = val; render(); }
+function setEditorOptionType(type){ itemEditor.optionType = type; itemEditor.selected = new Set(); render(); }
+function toggleEditorSize(val){
+  if(itemEditor.selected.has(val)) itemEditor.selected.delete(val);
+  else itemEditor.selected.add(val);
+  render();
+}
+async function saveItemEditor(){
+  if(!itemEditor.name.trim()){ alert("Ponle un nombre al artículo."); return; }
+  if(itemEditor.requiresOption && itemEditor.selected.size === 0){ alert("Marca al menos una talla/número."); return; }
+  const option_label = itemEditor.requiresOption ? (itemEditor.optionType === "numero" ? "Número de calzado" : "Talla") : null;
+  const options = itemEditor.requiresOption ? Array.from(itemEditor.selected).sort() : null;
+  const payload = { name: itemEditor.name.trim(), unit: itemEditor.unit.trim() || "unidad", stock: Number(itemEditor.stock) || 0, option_label, options };
+
+  if(itemEditor.id){
+    await sb.from("epp_items").update(payload).eq("id", itemEditor.id);
+  } else {
+    const id = itemEditor.name.trim().toLowerCase().replace(/[^a-z0-9]+/g,"-").slice(0,40) + "-" + Date.now().toString(36);
+    await sb.from("epp_items").insert({ id, ...payload });
+  }
+  itemEditor = null;
+  await loadInventory(); render();
+}
+async function deleteItem(id){
+  const { count } = await sb.from("solicitud_items").select("*", { count:"exact", head:true }).eq("item_id", id);
+  if(count > 0){
+    alert("Este artículo ya fue solicitado antes, así que no se puede eliminar (para no perder el historial). Puedes editarlo si necesitas cambiarlo.");
+    return;
+  }
+  if(!confirm("¿Eliminar este artículo del inventario? Esta acción no se puede deshacer.")) return;
+  await sb.from("epp_items").delete().eq("id", id);
   await loadInventory(); render();
 }
 
@@ -500,6 +545,7 @@ function renderMainApp(){
     ${showInventory ? renderInventoryModal() : ""}
     ${showNotifs ? renderNotifsModal() : ""}
     ${showExportModal ? renderExportModal() : ""}
+    ${itemEditor ? renderItemEditorModal() : ""}
   `;
   attachAppEvents();
 }
@@ -566,19 +612,55 @@ function renderInventoryModal(){
       <div class="sheet-head"><h2 style="display:flex;align-items:center;gap:8px;">${ICONS.package} Inventario de EPP</h2><button class="icon-btn" id="inv-close">${ICONS.x}</button></div>
       ${inventory.map(item => `
         <div class="item-row">
-          <div><div class="name">${item.name}</div><div class="stock">${item.unit}${item.option_label?` · ${item.option_label}`:''}</div></div>
-          <div class="qty-ctrl"><button data-stock-dec="${item.id}">−</button><span>${item.stock}</span><button data-stock-inc="${item.id}">+</button></div>
+          <div style="flex:1;"><div class="name">${item.name}</div><div class="stock">${item.unit}${item.option_label?` · ${item.option_label} (${(item.options||[]).join(', ')})`:''}</div></div>
+          <div class="qty-ctrl">
+            <button data-stock-dec="${item.id}">−</button><span>${item.stock}</span><button data-stock-inc="${item.id}">+</button>
+          </div>
+          <div style="display:flex;gap:6px;margin-left:8px;">
+            <button data-edit-item="${item.id}" style="border:none;background:#f1f5f9;border-radius:8px;width:28px;height:28px;cursor:pointer;font-size:14px;">✎</button>
+            <button data-delete-item="${item.id}" style="border:none;background:#fdeae4;color:#c0391a;border-radius:8px;width:28px;height:28px;cursor:pointer;font-size:14px;">🗑</button>
+          </div>
         </div>
       `).join("")}
-      <label style="margin-top:14px;">Agregar nuevo artículo</label>
-      <div class="inv-admin-row">
-        <input type="text" id="new-item-name" placeholder="Nombre" value="${newItemName}" />
+      <button class="submit-btn" id="new-item-btn" style="background:#00A0AC;margin-top:10px;">+ Agregar artículo</button>
+    </div>
+  </div>`;
+}
+
+function renderItemEditorModal(){
+  const e = itemEditor;
+  const sizeList = e.optionType === "numero" ? NUMERO_OPTIONS : TALLA_OPTIONS;
+  return `
+  <div class="overlay" id="item-editor-overlay">
+    <div class="sheet">
+      <div class="sheet-head"><h2>${e.id ? "Editar artículo" : "Nuevo artículo"}</h2><button class="icon-btn" id="item-editor-close">${ICONS.x}</button></div>
+      <label>Nombre</label>
+      <input type="text" id="ie-name" value="${e.name}" />
+      <div style="display:flex;gap:10px;">
+        <div style="flex:1;"><label>Unidad</label><input type="text" id="ie-unit" value="${e.unit}" /></div>
+        <div style="flex:1;"><label>Stock</label><input type="text" id="ie-stock" value="${e.stock}" /></div>
       </div>
-      <div class="inv-admin-row">
-        <input type="text" id="new-item-unit" placeholder="Unidad (par/unidad/caja)" value="${newItemUnit}" style="flex:1;" />
-        <input type="text" id="new-item-stock" placeholder="Stock" value="${newItemStock}" style="width:80px;" />
+      <label>¿Requiere talla o número?</label>
+      <div class="role-toggle" style="margin-bottom:14px;">
+        <button data-requires="no" class="${!e.requiresOption?'active':''}" style="${!e.requiresOption?'background:#00A0AC;color:#fff;border-color:transparent;':''}">No</button>
+        <button data-requires="si" class="${e.requiresOption?'active':''}" style="${e.requiresOption?'background:#00A0AC;color:#fff;border-color:transparent;':''}">Sí</button>
       </div>
-      <button class="submit-btn" id="add-item-btn" style="background:#00A0AC;">Agregar artículo</button>
+      ${e.requiresOption ? `
+        <label>Tipo</label>
+        <div class="role-toggle" style="margin-bottom:14px;">
+          <button data-opttype="talla" style="${e.optionType==='talla'?'background:#00A0AC;color:#fff;border-color:transparent;':''}">Talla</button>
+          <button data-opttype="numero" style="${e.optionType==='numero'?'background:#00A0AC;color:#fff;border-color:transparent;':''}">Número</button>
+        </div>
+        <label>Marca las que aplican</label>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;">
+          ${sizeList.map(v => `
+            <label style="display:flex;align-items:center;gap:5px;border:1px solid ${e.selected.has(v)?'#00A0AC':'#e2e8f0'};background:${e.selected.has(v)?'#eafafb':'#fff'};border-radius:10px;padding:7px 11px;font-size:13px;font-weight:600;color:#334155;cursor:pointer;">
+              <input type="checkbox" data-size-check="${v}" ${e.selected.has(v)?'checked':''} style="margin:0;width:auto;" /> ${v}
+            </label>
+          `).join("")}
+        </div>
+      ` : ""}
+      <button class="submit-btn" id="save-item-btn" style="background:#00A0AC;">Guardar artículo</button>
     </div>
   </div>`;
 }
@@ -629,13 +711,22 @@ function attachAppEvents(){
   document.getElementById("open-inventory")?.addEventListener("click", ()=>{ menuOpen=false; showInventory=true; render(); });
   document.getElementById("inv-close")?.addEventListener("click", ()=>{ showInventory=false; render(); });
   document.getElementById("inv-overlay")?.addEventListener("click", (e)=>{ if(e.target.id==="inv-overlay"){ showInventory=false; render(); } });
-  document.getElementById("add-item-btn")?.addEventListener("click", addInventoryItem);
-  const nin=document.getElementById("new-item-name"), niu=document.getElementById("new-item-unit"), nis=document.getElementById("new-item-stock");
-  if(nin) nin.addEventListener("input", e=>newItemName=e.target.value);
-  if(niu) niu.addEventListener("input", e=>newItemUnit=e.target.value);
-  if(nis) nis.addEventListener("input", e=>newItemStock=e.target.value);
+  document.getElementById("new-item-btn")?.addEventListener("click", openNewItemEditor);
+  document.querySelectorAll("[data-edit-item]").forEach(el=>el.addEventListener("click", ()=>openEditItemEditor(el.dataset.editItem)));
+  document.querySelectorAll("[data-delete-item]").forEach(el=>el.addEventListener("click", ()=>deleteItem(el.dataset.deleteItem)));
   document.querySelectorAll("[data-stock-inc]").forEach(el=>el.addEventListener("click", ()=>adjustStock(el.dataset.stockInc, 1)));
   document.querySelectorAll("[data-stock-dec]").forEach(el=>el.addEventListener("click", ()=>adjustStock(el.dataset.stockDec, -1)));
+
+  document.getElementById("item-editor-close")?.addEventListener("click", closeItemEditor);
+  document.getElementById("item-editor-overlay")?.addEventListener("click", (e)=>{ if(e.target.id==="item-editor-overlay") closeItemEditor(); });
+  document.getElementById("save-item-btn")?.addEventListener("click", saveItemEditor);
+  const ien = document.getElementById("ie-name"), ieu = document.getElementById("ie-unit"), ies = document.getElementById("ie-stock");
+  if(ien) ien.addEventListener("input", e=>setEditorField("name", e.target.value));
+  if(ieu) ieu.addEventListener("input", e=>setEditorField("unit", e.target.value));
+  if(ies) ies.addEventListener("input", e=>setEditorField("stock", e.target.value));
+  document.querySelectorAll("[data-requires]").forEach(el=>el.addEventListener("click", ()=>setEditorRequires(el.dataset.requires==="si")));
+  document.querySelectorAll("[data-opttype]").forEach(el=>el.addEventListener("click", ()=>setEditorOptionType(el.dataset.opttype)));
+  document.querySelectorAll("[data-size-check]").forEach(el=>el.addEventListener("change", ()=>toggleEditorSize(el.dataset.sizeCheck)));
 
   document.getElementById("form-close")?.addEventListener("click", closeForm);
   document.getElementById("form-overlay")?.addEventListener("click", (e)=>{ if(e.target.id==="form-overlay") closeForm(); });
