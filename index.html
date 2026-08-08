@@ -135,6 +135,7 @@ let tab = "espera";
 let solicitudes = [], inventory = [], notifications = [];
 let lastUpdate = "";
 let menuOpen = false, showInventory = false, showForm = false, showNotifs = false, spinning = false;
+let showExportModal = false, exportWorker = "";
 let formSelection = {}, formMotivo = "", formFotoFile = null, formFotoPreview = null;
 let newItemName = "", newItemUnit = "unidad", newItemStock = 0;
 
@@ -327,15 +328,20 @@ async function openNotifs(){
 }
 
 /* ---- Exportar Excel ---- */
-function exportExcel(){
-  const rows = solicitudes.map(s => ({
+function openExportModal(){ showExportModal = true; exportWorker = ""; render(); }
+function closeExportModal(){ showExportModal = false; render(); }
+function exportExcel(workerFilter){
+  const base = workerFilter ? solicitudes.filter(s => s.worker_name === workerFilter) : solicitudes;
+  const rows = base.map(s => ({
     Fecha: s.created_at, Trabajador: s.worker_name, Departamento: s.department, Estado: s.status,
     Motivo: s.motivo || "", Items: (s.solicitud_items||[]).map(it=>`${itemName(it.item_id)}${it.option_value?` (${it.option_value})`:''} x${it.qty}`).join("; "),
   }));
   const ws = XLSX.utils.json_to_sheet(rows);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Solicitudes");
-  XLSX.writeFile(wb, `solicitudes_epp_${Date.now()}.xlsx`);
+  const suffix = workerFilter ? `_${workerFilter.replace(/\s+/g,'_')}` : "_todos";
+  XLSX.writeFile(wb, `solicitudes_epp${suffix}_${Date.now()}.xlsx`);
+  showExportModal = false; render();
 }
 
 /* ================= RENDER ================= */
@@ -493,6 +499,7 @@ function renderMainApp(){
     ${showForm ? renderFormModal() : ""}
     ${showInventory ? renderInventoryModal() : ""}
     ${showNotifs ? renderNotifsModal() : ""}
+    ${showExportModal ? renderExportModal() : ""}
   `;
   attachAppEvents();
 }
@@ -590,6 +597,20 @@ function renderNotifsModal(){
   </div>`;
 }
 
+function renderExportModal(){
+  const workers = [...new Set(solicitudes.map(s => s.worker_name))].sort();
+  return `
+  <div class="overlay" id="export-overlay">
+    <div class="sheet">
+      <div class="sheet-head"><h2 style="display:flex;align-items:center;gap:8px;">${ICONS.download} Exportar Excel</h2><button class="icon-btn" id="export-close">${ICONS.x}</button></div>
+      <label>¿A quién quieres exportar?</label>
+      <button class="menu-item" style="border:1px solid #e2e8f0;border-radius:12px;margin-bottom:8px;" data-export-worker="">Todos los trabajadores</button>
+      ${workers.length===0 ? `<p style="color:#94a3b8;font-size:12px;text-align:center;padding:10px 0;">Aún no hay solicitudes cargadas</p>` :
+        workers.map(w => `<button class="menu-item" style="border:1px solid #e2e8f0;border-radius:12px;margin-bottom:8px;" data-export-worker="${w}">${w}</button>`).join("")}
+    </div>
+  </div>`;
+}
+
 function attachAppEvents(){
   document.getElementById("menu-btn")?.addEventListener("click", ()=>{ menuOpen=true; render(); });
   document.getElementById("menu-close")?.addEventListener("click", ()=>{ menuOpen=false; render(); });
@@ -600,7 +621,10 @@ function attachAppEvents(){
   document.getElementById("notif-btn")?.addEventListener("click", openNotifs);
   document.getElementById("notif-close")?.addEventListener("click", ()=>{ showNotifs=false; render(); });
   document.getElementById("notif-overlay")?.addEventListener("click", (e)=>{ if(e.target.id==="notif-overlay"){ showNotifs=false; render(); } });
-  document.getElementById("export-btn")?.addEventListener("click", exportExcel);
+  document.getElementById("export-btn")?.addEventListener("click", openExportModal);
+  document.getElementById("export-close")?.addEventListener("click", closeExportModal);
+  document.getElementById("export-overlay")?.addEventListener("click", (e)=>{ if(e.target.id==="export-overlay") closeExportModal(); });
+  document.querySelectorAll("[data-export-worker]").forEach(el=>el.addEventListener("click", ()=>exportExcel(el.dataset.exportWorker)));
 
   document.getElementById("open-inventory")?.addEventListener("click", ()=>{ menuOpen=false; showInventory=true; render(); });
   document.getElementById("inv-close")?.addEventListener("click", ()=>{ showInventory=false; render(); });
