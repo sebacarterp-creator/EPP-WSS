@@ -330,7 +330,7 @@ function openEditItemEditor(id){
   render();
 }
 function closeItemEditor(){ itemEditor = null; render(); }
-function setEditorField(field, value){ itemEditor[field] = value; render(); }
+function setEditorField(field, value){ itemEditor[field] = value; }
 function setEditorRequires(val){ itemEditor.requiresOption = val; render(); }
 function setEditorOptionType(type){ itemEditor.optionType = type; itemEditor.selected = new Set(); render(); }
 function toggleEditorSize(val){
