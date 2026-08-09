@@ -769,7 +769,7 @@ function renderMainApp(){
               const badgeLabel = st==="autorizado" ? "Autorizado" : st==="rechazado" ? "Rechazado" : "Pendiente";
               return `
               <li style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f1f5f9;">
-                <span>• ${itemName(it.item_id)}${it.option_value?` (${it.option_value})`:''} × ${it.qty}</span>
+                <span>• ${itemName(it.item_id)}${it.option_value?` (${it.option_value})`:''} × ${it.qty}${isSupervisor()?` <span style="color:#94a3b8;font-size:10px;">(stock: ${inventory.find(i=>i.id===it.item_id)?.stock ?? '—'})</span>`:''}</span>
                 ${isSupervisor() && st==="pendiente" ? `
                   <span style="display:flex;gap:4px;">
                     <button data-item-action="autorizado" data-item-id="${it.id}" data-sol-id="${s.id}" style="border:none;background:${STATUS.autorizadas.hex};color:#fff;border-radius:6px;padding:3px 7px;font-size:10px;font-weight:700;cursor:pointer;">Aprobar</button>
