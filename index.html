@@ -468,7 +468,7 @@ async function generarCertificado(sol){
     name: itemName(it.item_id), qty: it.qty, option: it.option_value || null,
   }));
   const payload = {
-    folio, solicitud_id: sol.id, worker_id: sol.worker_id,
+    folio, solicitud_id: sol.id, solicitud_fecha: sol.created_at, worker_id: sol.worker_id,
     worker_name: sol.worker_name, worker_rut: workerProfile?.rut || "",
     worker_cargo: workerProfile?.cargo || "", worker_centro_costo: workerProfile?.centro_costo || sol.department,
     contrato: empresaContrato, entrega_nombre: profile.nombre, entrega_cargo: profile.cargo || "",
@@ -532,9 +532,11 @@ function buildCertificadoPDF(cert){
   y += rowH;
   doc.rect(M, y, CW, rowH);
   doc.text("Contrato:  " + (cert.contrato||""), M+2, y+4.6);
-  doc.setFontSize(7); doc.setTextColor(90,90,90);
-  doc.text("* Datos vigentes a la fecha de esta entrega (" + new Date(cert.created_at).toLocaleDateString('es-CL') + ")", M+CW-2, y+4.6, {align:"right"});
-  doc.setTextColor(0,0,0); doc.setFontSize(9);
+  y += rowH;
+
+  doc.rect(M, y, CW/2, rowH); doc.rect(M+CW/2, y, CW/2, rowH);
+  doc.text("Fecha de solicitud:  " + new Date(cert.solicitud_fecha).toLocaleDateString('es-CL'), M+2, y+4.6);
+  doc.text("Fecha de entrega:  " + new Date(cert.created_at).toLocaleDateString('es-CL'), M+CW/2+2, y+4.6);
   y += rowH + 4;
 
   sectionHeader("ELEMENTOS DE PROTECCION PERSONAL (E.P.P.) ENTREGADOS");
@@ -569,7 +571,7 @@ function buildCertificadoPDF(cert){
   doc.line(M+CW/2+2, y+13, M+CW-2, y+13);
   doc.setFont("helvetica","normal"); doc.setFontSize(7.5);
   doc.text(cert.entrega_nombre + (cert.entrega_cargo?" — "+cert.entrega_cargo:""), M+2, y+16.5);
-  doc.text(cert.recibe_nombre, M+CW/2+2, y+16.5);
+  doc.text(cert.recibe_nombre + (cert.worker_cargo?" — "+cert.worker_cargo:""), M+CW/2+2, y+16.5);
   y += signH + 4;
 
   sectionHeader("COMPROMISO");
@@ -984,11 +986,24 @@ function renderUserManagementModal(){
   </div>`;
 }
 
+function exportInventoryHistory(){
+  const rows = inventoryMovements.map(m => ({
+    Fecha: m.created_at, Artículo: m.item_name,
+    Tipo: m.change_type==='ajuste'?'Ajuste manual':m.change_type==='carga'?'Carga de stock':'Edición de artículo',
+    "Stock anterior": m.qty_before, "Stock nuevo": m.qty_after, Responsable: m.admin_name || "",
+  }));
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Historial Inventario");
+  XLSX.writeFile(wb, `historial_inventario_${Date.now()}.xlsx`);
+}
+
 function renderInventoryHistoryModal(){
   return `
   <div class="overlay" id="invhist-overlay">
     <div class="sheet">
       <div class="sheet-head"><h2>Historial de inventario</h2><button class="icon-btn" id="invhist-close">${ICONS.x}</button></div>
+      ${inventoryMovements.length>0 ? `<button id="invhist-export-btn" style="display:flex;align-items:center;gap:6px;border:1px solid #e2e8f0;background:#fff;padding:7px 12px;border-radius:10px;font-size:12px;font-weight:700;color:#334155;cursor:pointer;margin-bottom:12px;">${ICONS.download} Exportar Excel</button>` : ""}
       ${inventoryMovements.length===0 ? `<p style="color:#94a3b8;font-size:13px;text-align:center;padding:20px 0;">Sin movimientos registrados</p>` :
         inventoryMovements.map(m => `
         <div class="card" style="margin-bottom:8px;">
@@ -1087,6 +1102,7 @@ function attachAppEvents(){
   document.getElementById("open-inventory-history")?.addEventListener("click", openInventoryHistory);
   document.getElementById("invhist-close")?.addEventListener("click", closeInventoryHistory);
   document.getElementById("invhist-overlay")?.addEventListener("click", (e)=>{ if(e.target.id==="invhist-overlay") closeInventoryHistory(); });
+  document.getElementById("invhist-export-btn")?.addEventListener("click", exportInventoryHistory);
 
   document.getElementById("open-user-mgmt")?.addEventListener("click", openUserManagement);
   document.getElementById("usermgmt-close")?.addEventListener("click", closeUserManagement);
