@@ -143,6 +143,7 @@ let showUserManagement = false, editingUser = null;
 let showInventoryHistory = false, inventoryMovements = [];
 let showAddCargo = false, newCargoName = "", showAddCentroCosto = false, newCentroCostoName = "";
 let stockAddValue = {}; // itemId -> string del campo "sumar cantidad"
+let rejectModal = null; // { solicitudId, itemId, motivo }
 let formSelection = {}, formMotivo = "", formFotoFile = null, formFotoPreview = null;
 const TALLA_OPTIONS = ["S","M","L","XL","XXL"];
 const NUMERO_OPTIONS = Array.from({length:12}, (_,i)=> String(34+i));
@@ -458,14 +459,127 @@ async function addCentroCosto(){
 }
 
 /* ---- Aprobación por ítem + certificado de entrega ---- */
-async function updateItemStatus(solicitudId, itemRowId, status){
-  await sb.from("solicitud_items").update({ status }).eq("id", itemRowId);
+async function recomputeSolicitudStatus(solicitudId){
   const { data: items } = await sb.from("solicitud_items").select("status").eq("solicitud_id", solicitudId);
   const pending = (items||[]).some(i => i.status === "pendiente");
   const anyAutorizado = (items||[]).some(i => i.status === "autorizado");
   const newStatus = pending ? "espera" : (anyAutorizado ? "autorizadas" : "no_realizados");
   await sb.from("solicitudes").update({ status: newStatus }).eq("id", solicitudId);
+}
+
+async function updateItemStatus(solicitudId, itemRowId, status){
+  await sb.from("solicitud_items").update({ status }).eq("id", itemRowId);
+  await recomputeSolicitudStatus(solicitudId);
   await loadSolicitudes(); render();
+}
+
+function openRejectModal(solicitudId, itemId){ rejectModal = { solicitudId, itemId, motivo:"" }; render(); }
+function closeRejectModal(){ rejectModal = null; render(); }
+function setRejectMotivo(v){ rejectModal.motivo = v; }
+
+async function confirmReject(){
+  if(!rejectModal.motivo.trim()){ alert("Debes escribir el motivo del rechazo antes de confirmar."); return; }
+  const { solicitudId, itemId } = rejectModal;
+  const motivo = rejectModal.motivo.trim();
+  const sol = solicitudes.find(s => s.id === solicitudId);
+  const itemRow = (sol.solicitud_items||[]).find(it => it.id === itemId);
+  const invItem = inventory.find(i => i.id === itemRow.item_id);
+
+  await sb.from("solicitud_items").update({ status:"rechazado", motivo_rechazo: motivo }).eq("id", itemId);
+
+  const { data: folio, error: folioErr } = await sb.rpc("get_next_folio_rechazo");
+  if(!folioErr){
+    const { data: workerProfile } = await sb.from("profiles").select("rut,cargo").eq("id", sol.worker_id).single();
+    const payload = {
+      folio, solicitud_id: solicitudId, solicitud_item_id: itemId, worker_id: sol.worker_id,
+      worker_name: sol.worker_name, worker_rut: workerProfile?.rut||"", worker_cargo: workerProfile?.cargo||"",
+      item_name: itemName(itemRow.item_id), item_option: itemRow.option_value||null, item_qty: itemRow.qty,
+      stock_al_momento: invItem?.stock ?? null, motivo,
+      rechazado_por_nombre: profile.nombre, rechazado_por_cargo: profile.cargo||"",
+    };
+    const { data: reporte, error } = await sb.from("reportes_rechazo").insert(payload).select().single();
+    if(!error) buildRechazoPDF(reporte);
+  }
+
+  await recomputeSolicitudStatus(solicitudId);
+  rejectModal = null;
+  await loadSolicitudes(); render();
+}
+
+async function verReporteRechazo(itemRowId){
+  const { data, error } = await sb.from("reportes_rechazo").select("*").eq("solicitud_item_id", itemRowId).single();
+  if(error || !data){ alert("No se encontró el reporte de este ítem."); return; }
+  buildRechazoPDF(data);
+}
+
+function buildRechazoPDF(rep){
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit:"mm", format:"a4" });
+  const W = 210, M = 15, CW = W - 2*M;
+  let y = 20;
+
+  doc.rect(M, y, CW, 20);
+  doc.rect(M, y, 40, 20);
+  try { doc.addImage("data:image/jpeg;base64," + LOGO_BASE64, "JPEG", M+3, y+3, 34, 14, undefined, "FAST"); } catch(e){}
+  doc.rect(M+40, y, CW-40, 20);
+  doc.setFont("helvetica","bold"); doc.setFontSize(11);
+  doc.text("REPORTE DE ÍTEM RECHAZADO — SOLICITUD DE EPP", M+40+(CW-40)/2, y+11, {align:"center"});
+  doc.setFontSize(7.5); doc.setFont("helvetica","normal");
+  doc.text("Folio: " + rep.folio, M+CW-2, y-1, {align:"right"});
+  y += 26;
+
+  function sectionHeader(label){
+    doc.setFillColor(43,43,43); doc.rect(M, y, CW, 6, "F");
+    doc.setTextColor(255,255,255); doc.setFont("helvetica","bold"); doc.setFontSize(9);
+    doc.text(label, M+2, y+4.2); doc.setTextColor(0,0,0);
+    y += 6;
+  }
+
+  const rowH = 7;
+  sectionHeader("DATOS DE QUIEN SOLICITÓ");
+  doc.setFont("helvetica","normal"); doc.setFontSize(9);
+  doc.rect(M, y, CW*0.62, rowH); doc.rect(M+CW*0.62, y, CW*0.38, rowH);
+  doc.text("Nombre:  " + rep.worker_name, M+2, y+4.6);
+  doc.text("Rut:  " + (rep.worker_rut||""), M+CW*0.62+2, y+4.6);
+  y += rowH;
+  doc.rect(M, y, CW, rowH);
+  doc.text("Cargo:  " + (rep.worker_cargo||""), M+2, y+4.6);
+  y += rowH + 5;
+
+  sectionHeader("ÍTEM RECHAZADO");
+  const cols = [["Elemento",0.40],["Talla / Número",0.24],["Cantidad",0.16],["Stock al momento",0.20]];
+  let cx=[M]; cols.forEach(([,f])=>cx.push(cx[cx.length-1]+CW*f));
+  const hdrH = 8;
+  doc.setFont("helvetica","bold"); doc.setFontSize(8.5);
+  cols.forEach(([label],i)=>{ doc.rect(cx[i], y, cx[i+1]-cx[i], hdrH); doc.text(label, (cx[i]+cx[i+1])/2, y+4.8, {align:"center"}); });
+  y += hdrH;
+  doc.setFont("helvetica","normal");
+  const vals = [rep.item_name, rep.item_option||"—", String(rep.item_qty), (rep.stock_al_momento??"—")+" unidades"];
+  vals.forEach((v,i)=>{ doc.rect(cx[i], y, cx[i+1]-cx[i], rowH); doc.text(v, (cx[i]+cx[i+1])/2, y+4.6, {align:"center"}); });
+  y += rowH + 5;
+
+  sectionHeader("MOTIVO DEL RECHAZO");
+  const motivoH = 16;
+  doc.rect(M, y, CW, motivoH);
+  const motivoLines = doc.splitTextToSize(rep.motivo, CW-4);
+  doc.setFontSize(9);
+  motivoLines.slice(0,3).forEach((line, i) => doc.text(line, M+2, y+5+i*4.2));
+  y += motivoH + 5;
+
+  sectionHeader("RECHAZADO POR");
+  doc.setFontSize(9);
+  doc.rect(M, y, CW*0.62, rowH); doc.rect(M+CW*0.62, y, CW*0.38, rowH);
+  doc.text("Nombre:  " + rep.rechazado_por_nombre, M+2, y+4.6);
+  doc.text("Cargo:  " + (rep.rechazado_por_cargo||""), M+CW*0.62+2, y+4.6);
+  y += rowH;
+  doc.rect(M, y, CW, rowH);
+  doc.text("Fecha de rechazo:  " + new Date(rep.created_at).toLocaleDateString('es-CL'), M+2, y+4.6);
+  y += rowH + 8;
+
+  doc.setFontSize(7.5); doc.setTextColor(90,90,90);
+  doc.text("Este reporte se genera automáticamente para gestionar la reposición del ítem señalado.", M+2, y);
+
+  doc.save(rep.folio + ".pdf");
 }
 
 async function generarCertificado(sol){
@@ -791,20 +905,30 @@ function renderMainApp(){
           ${s.foto_url?`<img src="${s.foto_url}" class="foto-thumb" />`:""}
           ${s.motivo?`<div class="motivo">"${s.motivo}"</div>`:""}
           <ul class="items" style="list-style:none;padding:0;">
-            ${(s.solicitud_items||[]).filter(it => isSupervisor() || it.status !== "rechazado").map(it => {
-              const st = it.status || "pendiente";
-              const badgeColor = st==="autorizado" ? STATUS.autorizadas.hex : st==="rechazado" ? STATUS.no_realizados.hex : "#94a3b8";
-              const badgeLabel = st==="autorizado" ? "Autorizado" : st==="rechazado" ? "Rechazado" : "Pendiente";
-              return `
-              <li style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f1f5f9;">
-                <span>• ${itemName(it.item_id)}${it.option_value?` (${it.option_value})`:''} × ${it.qty}${isSupervisor() && st==="pendiente"?` <span style="font-size:10px;">(stock: ${stockLabel(inventory.find(i=>i.id===it.item_id)?.stock ?? 0)})</span>`:''}</span>
-                ${isSupervisor() && st==="pendiente" ? `
-                  <span style="display:flex;gap:4px;">
-                    <button data-item-action="autorizado" data-item-id="${it.id}" data-sol-id="${s.id}" style="border:none;background:${STATUS.autorizadas.hex};color:#fff;border-radius:6px;padding:3px 7px;font-size:10px;font-weight:700;cursor:pointer;">Aprobar</button>
-                    <button data-item-action="rechazado" data-item-id="${it.id}" data-sol-id="${s.id}" style="border:none;background:${STATUS.no_realizados.hex};color:#fff;border-radius:6px;padding:3px 7px;font-size:10px;font-weight:700;cursor:pointer;">Rechazar</button>
-                  </span>` : `<span style="font-size:10px;font-weight:700;color:${badgeColor};">${badgeLabel}</span>`}
-              </li>`;
-            }).join("")}
+            ${tab === "no_realizados" ? `
+              ${(s.solicitud_items||[]).filter(it => it.status === "rechazado").map(it => `
+                <li style="padding:6px 0;border-bottom:1px solid #f1f5f9;">
+                  <div style="display:flex;align-items:center;justify-content:space-between;">
+                    <span>• ${itemName(it.item_id)}${it.option_value?` (${it.option_value})`:''} × ${it.qty}</span>
+                    <button data-ver-reporte="${it.id}" style="border:none;background:#f1f5f9;color:#334155;border-radius:6px;padding:3px 8px;font-size:10px;font-weight:700;cursor:pointer;">${ICONS.download} Reporte</button>
+                  </div>
+                  ${it.motivo_rechazo ? `<div class="motivo" style="margin-top:3px;">"${it.motivo_rechazo}"</div>` : ""}
+                </li>
+              `).join("")}
+            ` : `
+              ${(s.solicitud_items||[]).filter(it => it.status !== "rechazado").map(it => {
+                const st = it.status || "pendiente";
+                return `
+                <li style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f1f5f9;">
+                  <span>• ${itemName(it.item_id)}${it.option_value?` (${it.option_value})`:''} × ${it.qty}${isSupervisor() && st==="pendiente"?` <span style="font-size:10px;">(stock: ${stockLabel(inventory.find(i=>i.id===it.item_id)?.stock ?? 0)})</span>`:''}</span>
+                  ${isSupervisor() && st==="pendiente" ? `
+                    <span style="display:flex;gap:4px;">
+                      <button data-item-action="autorizado" data-item-id="${it.id}" data-sol-id="${s.id}" style="border:none;background:${STATUS.autorizadas.hex};color:#fff;border-radius:6px;padding:3px 7px;font-size:10px;font-weight:700;cursor:pointer;">Aprobar</button>
+                      <button data-open-reject="${it.id}" data-open-reject-sol="${s.id}" style="border:none;background:${STATUS.no_realizados.hex};color:#fff;border-radius:6px;padding:3px 7px;font-size:10px;font-weight:700;cursor:pointer;">Rechazar</button>
+                    </span>` : st==="autorizado" ? `<span style="font-size:10px;font-weight:700;color:${STATUS.autorizadas.hex};">Autorizado</span>` : ""}
+                </li>`;
+              }).join("")}
+            `}
           </ul>
           ${isSupervisor() && s.status==="autorizadas" ? `
             <button style="background:${STATUS.finalizadas.hex};color:#fff;border:none;font-weight:700;font-size:12px;padding:8px;border-radius:10px;width:100%;cursor:pointer;margin-top:8px;" data-generar-cert="${s.id}">Marcar como entregado (genera certificado)</button>` : ""}
@@ -826,6 +950,7 @@ function renderMainApp(){
     ${showNotifs ? renderNotifsModal() : ""}
     ${showExportModal ? renderExportModal() : ""}
     ${itemEditor ? renderItemEditorModal() : ""}
+    ${rejectModal ? renderRejectModal() : ""}
     ${showUserManagement ? renderUserManagementModal() : ""}
     ${showInventoryHistory ? renderInventoryHistoryModal() : ""}
   `;
@@ -1056,6 +1181,19 @@ function renderNotifsModal(){
   </div>`;
 }
 
+function renderRejectModal(){
+  const canConfirm = rejectModal.motivo.trim().length > 0;
+  return `
+  <div class="overlay" id="reject-overlay">
+    <div class="sheet" style="padding-bottom:26px;">
+      <div class="sheet-head"><h2>Motivo del rechazo</h2><button class="icon-btn" id="reject-close">${ICONS.x}</button></div>
+      <label>¿Por qué se rechaza este ítem? (ej. falta de stock)</label>
+      <textarea id="reject-motivo-input" placeholder="Escribe el motivo...">${rejectModal.motivo}</textarea>
+      <button class="submit-btn" id="reject-confirm-btn" style="background:${canConfirm?'#E4572E':'#cbd5e1'}" ${canConfirm?'':'disabled'}>Confirmar rechazo</button>
+    </div>
+  </div>`;
+}
+
 function renderExportModal(){
   const workers = [...new Set(solicitudes.map(s => s.worker_name))].sort();
   return `
@@ -1115,6 +1253,16 @@ function attachAppEvents(){
 
   document.querySelectorAll("[data-tab]").forEach(el=>el.addEventListener("click", ()=>setTab(el.dataset.tab)));
   document.querySelectorAll("[data-item-action]").forEach(el=>el.addEventListener("click", ()=>updateItemStatus(el.dataset.solId, el.dataset.itemId, el.dataset.itemAction)));
+  document.querySelectorAll("[data-open-reject]").forEach(el=>el.addEventListener("click", ()=>openRejectModal(el.dataset.openRejectSol, el.dataset.openReject)));
+  document.getElementById("reject-close")?.addEventListener("click", closeRejectModal);
+  document.getElementById("reject-overlay")?.addEventListener("click", (e)=>{ if(e.target.id==="reject-overlay") closeRejectModal(); });
+  document.getElementById("reject-motivo-input")?.addEventListener("input", e=>{
+    setRejectMotivo(e.target.value);
+    const btn = document.getElementById("reject-confirm-btn");
+    if(btn){ const ok = e.target.value.trim().length>0; btn.disabled=!ok; btn.style.background = ok?'#E4572E':'#cbd5e1'; }
+  });
+  document.getElementById("reject-confirm-btn")?.addEventListener("click", confirmReject);
+  document.querySelectorAll("[data-ver-reporte]").forEach(el=>el.addEventListener("click", ()=>verReporteRechazo(el.dataset.verReporte)));
   document.querySelectorAll("[data-generar-cert]").forEach(el=>el.addEventListener("click", ()=>{
     const sol = solicitudes.find(s=>s.id===el.dataset.generarCert);
     if(sol) generarCertificado(sol);
