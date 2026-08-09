@@ -534,6 +534,79 @@ async function verReporteRechazo(itemRowId){
   buildRechazoPDF(data);
 }
 
+async function verReporteAgrupado(solicitudId){
+  const { data, error } = await sb.from("reportes_rechazo").select("*").eq("solicitud_id", solicitudId).order("created_at");
+  if(error || !data || data.length === 0){ alert("No se encontraron reportes de rechazo para esta solicitud."); return; }
+  buildRechazoAgrupadoPDF(data);
+}
+
+function buildRechazoAgrupadoPDF(reps){
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit:"mm", format:"a4" });
+  const W = 210, M = 15, CW = W - 2*M;
+  let y = 20;
+  const first = reps[0];
+
+  doc.rect(M, y, CW, 20);
+  doc.rect(M, y, 40, 20);
+  try { doc.addImage("data:image/jpeg;base64," + LOGO_BASE64, "JPEG", M+3, y+3, 34, 14, undefined, "FAST"); } catch(e){}
+  doc.rect(M+40, y, CW-40, 20);
+  doc.setFont("helvetica","bold"); doc.setFontSize(11);
+  doc.text("REPORTE DE ÍTEMS RECHAZADOS — SOLICITUD DE EPP", M+40+(CW-40)/2, y+11, {align:"center"});
+  y += 26;
+
+  function sectionHeader(label){
+    doc.setFillColor(43,43,43); doc.rect(M, y, CW, 6, "F");
+    doc.setTextColor(255,255,255); doc.setFont("helvetica","bold"); doc.setFontSize(9);
+    doc.text(label, M+2, y+4.2); doc.setTextColor(0,0,0);
+    y += 6;
+  }
+
+  const rowH = 7;
+  sectionHeader("DATOS DE QUIEN SOLICITÓ");
+  doc.setFont("helvetica","normal"); doc.setFontSize(9);
+  doc.rect(M, y, CW*0.62, rowH); doc.rect(M+CW*0.62, y, CW*0.38, rowH);
+  doc.text("Nombre:  " + first.worker_name, M+2, y+4.6);
+  doc.text("Rut:  " + (first.worker_rut||""), M+CW*0.62+2, y+4.6);
+  y += rowH;
+  doc.rect(M, y, CW, rowH);
+  doc.text("Cargo:  " + (first.worker_cargo||""), M+2, y+4.6);
+  y += rowH + 5;
+
+  sectionHeader("ÍTEMS RECHAZADOS");
+  const cols = [["Folio",0.20],["Elemento",0.32],["Talla/Núm.",0.18],["Cantidad",0.15],["Fecha",0.15]];
+  let cx=[M]; cols.forEach(([,f])=>cx.push(cx[cx.length-1]+CW*f));
+  const hdrH = 8;
+  doc.setFont("helvetica","bold"); doc.setFontSize(8);
+  cols.forEach(([label],i)=>{ doc.rect(cx[i], y, cx[i+1]-cx[i], hdrH); doc.text(label, (cx[i]+cx[i+1])/2, y+4.8, {align:"center"}); });
+  y += hdrH;
+  doc.setFont("helvetica","normal"); doc.setFontSize(8);
+  reps.forEach(rep => {
+    const vals = [rep.folio, rep.item_name, rep.item_option||"—", qtyWithUnit(rep.item_qty, rep.item_unit||"unidad"), new Date(rep.created_at).toLocaleDateString('es-CL')];
+    vals.forEach((v,i)=>{ doc.rect(cx[i], y, cx[i+1]-cx[i], rowH); doc.text(v, (cx[i]+cx[i+1])/2, y+4.6, {align:"center"}); });
+    y += rowH;
+  });
+  y += 5;
+
+  sectionHeader("MOTIVOS");
+  reps.forEach(rep => {
+    const lineH = 5;
+    doc.setFont("helvetica","bold"); doc.setFontSize(8);
+    doc.text(rep.folio + " — " + rep.item_name + ":", M+2, y+4);
+    y += lineH;
+    doc.setFont("helvetica","normal");
+    const lines = doc.splitTextToSize(rep.motivo, CW-6);
+    lines.slice(0,2).forEach(line => { doc.text(line, M+4, y+3.5); y += 4.2; });
+    y += 2;
+  });
+  y += 3;
+
+  doc.setFontSize(7.5); doc.setTextColor(90,90,90);
+  doc.text("Este reporte agrupa todos los ítems rechazados de esta solicitud para gestionar su reposición.", M+2, y);
+
+  doc.save(`rechazos_${first.worker_name.replace(/\s+/g,'_')}_${Date.now()}.pdf`);
+}
+
 function buildRechazoPDF(rep){
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit:"mm", format:"a4" });
@@ -605,7 +678,7 @@ function buildRechazoPDF(rep){
 }
 
 async function generarCertificado(sol){
-  if(!confirm("¿Confirmas la entrega? Se generará el certificado con folio único y la solicitud pasará a Finalizadas.")) return;
+  if(!confirm("¿Confirmas la entrega? Se generará el registro con folio único y la solicitud pasará a Finalizadas.")) return;
   const { data: folio, error: folioErr } = await sb.rpc("get_next_folio");
   if(folioErr){ alert("No se pudo generar el folio: " + folioErr.message); return; }
   const { data: workerProfile } = await sb.from("profiles").select("rut,cargo,centro_costo").eq("id", sol.worker_id).single();
@@ -621,7 +694,7 @@ async function generarCertificado(sol){
     recibe_nombre: sol.worker_name, items_json: itemsAut,
   };
   const { data: cert, error } = await sb.from("certificados").insert(payload).select().single();
-  if(error){ alert("Error al generar el certificado: " + error.message); return; }
+  if(error){ alert("Error al generar el registro: " + error.message); return; }
   await sb.from("solicitudes").update({ status: "finalizadas" }).eq("id", sol.id);
   await loadSolicitudes(); render();
   buildCertificadoPDF(cert);
@@ -629,7 +702,7 @@ async function generarCertificado(sol){
 
 async function verCertificado(solicitudId){
   const { data, error } = await sb.from("certificados").select("*").eq("solicitud_id", solicitudId).single();
-  if(error || !data){ alert("No se encontró el certificado de esta solicitud."); return; }
+  if(error || !data){ alert("No se encontró el registro de esta solicitud."); return; }
   buildCertificadoPDF(data);
 }
 
@@ -939,6 +1012,7 @@ function renderMainApp(){
                   ${it.motivo_rechazo ? `<div class="motivo" style="margin-top:3px;">"${it.motivo_rechazo}"</div>` : ""}
                 </li>
               `).join("")}
+              <button data-ver-reporte-agrupado="${s.id}" style="border:1px solid #e2e8f0;background:#fff;color:#334155;border-radius:10px;padding:8px;font-size:12px;font-weight:700;cursor:pointer;width:100%;margin-top:10px;display:flex;align-items:center;justify-content:center;gap:6px;">${ICONS.download} Reporte agrupado de esta solicitud</button>
             ` : `
               ${(s.solicitud_items||[]).filter(it => it.status !== "rechazado").map(it => {
                 const st = it.status || "pendiente";
@@ -954,10 +1028,10 @@ function renderMainApp(){
               }).join("")}
             `}
           </ul>
-          ${isSupervisor() && s.status==="autorizadas" ? `
-            <button style="background:${STATUS.finalizadas.hex};color:#fff;border:none;font-weight:700;font-size:12px;padding:8px;border-radius:10px;width:100%;cursor:pointer;margin-top:8px;" data-generar-cert="${s.id}">Marcar como entregado (genera certificado)</button>` : ""}
-          ${s.status==="finalizadas" ? `
-            <button style="background:#f1f5f9;color:#334155;border:none;font-weight:700;font-size:12px;padding:8px;border-radius:10px;width:100%;cursor:pointer;margin-top:8px;display:flex;align-items:center;justify-content:center;gap:6px;" data-ver-cert="${s.id}">${ICONS.download} Ver certificado (PDF)</button>` : ""}
+          ${isSupervisor() && tab !== "no_realizados" && s.status==="autorizadas" ? `
+            <button style="background:${STATUS.finalizadas.hex};color:#fff;border:none;font-weight:700;font-size:12px;padding:8px;border-radius:10px;width:100%;cursor:pointer;margin-top:8px;" data-generar-cert="${s.id}">Marcar como entregado (genera registro)</button>` : ""}
+          ${tab !== "no_realizados" && s.status==="finalizadas" ? `
+            <button style="background:#f1f5f9;color:#334155;border:none;font-weight:700;font-size:12px;padding:8px;border-radius:10px;width:100%;cursor:pointer;margin-top:8px;display:flex;align-items:center;justify-content:center;gap:6px;" data-ver-cert="${s.id}">${ICONS.download} Ver registro (PDF)</button>` : ""}
         </div>
       `).join("")}
     </main>
@@ -1288,6 +1362,7 @@ function attachAppEvents(){
   });
   document.getElementById("reject-confirm-btn")?.addEventListener("click", confirmReject);
   document.querySelectorAll("[data-ver-reporte]").forEach(el=>el.addEventListener("click", ()=>verReporteRechazo(el.dataset.verReporte)));
+  document.querySelectorAll("[data-ver-reporte-agrupado]").forEach(el=>el.addEventListener("click", ()=>verReporteAgrupado(el.dataset.verReporteAgrupado)));
   document.querySelectorAll("[data-generar-cert]").forEach(el=>el.addEventListener("click", ()=>{
     const sol = solicitudes.find(s=>s.id===el.dataset.generarCert);
     if(sol) generarCertificado(sol);
