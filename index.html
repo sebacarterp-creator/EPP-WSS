@@ -342,7 +342,10 @@ async function saveItemEditor(){
   if(!itemEditor.name.trim()){ alert("Ponle un nombre al artículo."); return; }
   if(itemEditor.requiresOption && itemEditor.selected.size === 0){ alert("Marca al menos una talla/número."); return; }
   const option_label = itemEditor.requiresOption ? (itemEditor.optionType === "numero" ? "Número de calzado" : "Talla") : null;
-  const options = itemEditor.requiresOption ? Array.from(itemEditor.selected).sort() : null;
+  const referenceList = itemEditor.optionType === "numero" ? NUMERO_OPTIONS : TALLA_OPTIONS;
+  const options = itemEditor.requiresOption
+    ? Array.from(itemEditor.selected).sort((a,b) => referenceList.indexOf(a) - referenceList.indexOf(b))
+    : null;
   const payload = { name: itemEditor.name.trim(), unit: itemEditor.unit.trim() || "unidad", stock: Number(itemEditor.stock) || 0, option_label, options };
 
   if(itemEditor.id){
@@ -583,7 +586,7 @@ function renderFormModal(){
         <div class="item-row ${active?'active':''}">
           <div data-toggle="${item.id}" style="flex:1;cursor:pointer;">
             <div class="name">${item.name}</div>
-            <div class="stock">Stock: ${item.stock} ${item.unit}</div>
+            ${!isSupervisor() ? "" : `<div class="stock">Stock: ${item.stock} ${item.unit}</div>`}
           </div>
           ${active ? `<div class="qty-ctrl"><button data-qty-dec="${item.id}">−</button><span>${sel.qty}</span><button data-qty-inc="${item.id}">+</button></div>` : ""}
           ${active && needsOption ? `
