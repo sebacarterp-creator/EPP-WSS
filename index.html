@@ -12,6 +12,7 @@
 <meta name="apple-mobile-web-app-title" content="EPP" />
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <style>
   :root{ --teal:#00A0AC; --amber:#F5B301; --green:#2E9E5B; --orange:#E4572E; --ink:#1e293b; --muted:#64748b; --line:#eef1f4; --bg:#f1f5f9; }
   *{box-sizing:border-box;}
@@ -94,6 +95,7 @@
 
 <script>
 /* ================= CONFIG ================= */
+const LOGO_BASE64 = "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";
 const SUPABASE_URL = "https://lsrumzymbktvpcvjdrdz.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxzcnVtenltYmt0dnBjdmpkcmR6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwMDEzMjIsImV4cCI6MjEwMDU3NzMyMn0.ssfhKCo6LZtLA6k6TGpt3KyXcwtQ9nb8lz5GU4e5lHA";
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -127,15 +129,20 @@ const ICONS = {
 let session = null, profile = null;
 let view = "loading"; // loading | login | signup | forgot | app
 let authError = "", authOk = "", authLoading = false;
-let signupData = { nombre:"", rut:"", departamento:"", email:"", password:"" };
+let signupData = { nombre:"", rut:"", centro_costo:"", cargo:"", email:"", password:"" };
 let loginData = { email:"", password:"" };
 let forgotEmail = "";
+let cargos = [], centrosCosto = [], empresaContrato = "";
 
 let tab = "espera";
 let solicitudes = [], inventory = [], notifications = [];
 let lastUpdate = "";
 let menuOpen = false, showInventory = false, showForm = false, showNotifs = false, spinning = false;
 let showExportModal = false, exportWorker = "";
+let showUserManagement = false, editingUser = null;
+let showInventoryHistory = false, inventoryMovements = [];
+let showAddCargo = false, newCargoName = "", showAddCentroCosto = false, newCentroCostoName = "";
+let stockAddValue = {}; // itemId -> string del campo "sumar cantidad"
 let formSelection = {}, formMotivo = "", formFotoFile = null, formFotoPreview = null;
 const TALLA_OPTIONS = ["S","M","L","XL","XXL"];
 const NUMERO_OPTIONS = Array.from({length:12}, (_,i)=> String(34+i));
@@ -151,6 +158,7 @@ function isAdmin(){ return profile && profile.rol === "administrador"; }
 
 /* ================= AUTH ================= */
 async function initAuth(){
+  await loadPublicLists();
   const { data } = await sb.auth.getSession();
   session = data.session;
   if(session){ await loadProfile(); } else { view = "login"; }
@@ -162,6 +170,17 @@ async function initAuth(){
   });
 }
 
+async function loadPublicLists(){
+  const [{ data: c }, { data: cc }, { data: ec }] = await Promise.all([
+    sb.from("cargos").select("*").order("nombre"),
+    sb.from("centros_costo").select("*").order("nombre"),
+    sb.from("empresa_config").select("*").eq("id", 1).maybeSingle(),
+  ]);
+  cargos = c || [];
+  centrosCosto = cc || [];
+  empresaContrato = ec?.contrato || "";
+}
+
 async function loadProfile(){
   const { data, error } = await sb.from("profiles").select("*").eq("id", session.user.id).single();
   if(!error) profile = data;
@@ -171,13 +190,13 @@ async function loadProfile(){
 
 async function doSignup(){
   authError = ""; authOk = "";
-  if(!signupData.nombre.trim() || !signupData.rut.trim() || !signupData.email.trim() || signupData.password.length < 6){
+  if(!signupData.nombre.trim() || !signupData.rut.trim() || !signupData.centro_costo || !signupData.cargo || !signupData.email.trim() || signupData.password.length < 6){
     authError = "Completa todos los campos (contraseña mínimo 6 caracteres)."; render(); return;
   }
   authLoading = true; render();
   const { error } = await sb.auth.signUp({
     email: signupData.email.trim(), password: signupData.password,
-    options: { data: { nombre: signupData.nombre.trim(), rut: signupData.rut.trim(), departamento: signupData.departamento.trim() } }
+    options: { data: { nombre: signupData.nombre.trim(), rut: signupData.rut.trim(), centro_costo: signupData.centro_costo, cargo: signupData.cargo } }
   });
   authLoading = false;
   if(error){ authError = traducirError(error.message); render(); return; }
@@ -221,7 +240,7 @@ async function doLogout(){
 
 /* ================= DATA ================= */
 async function loadAll(){
-  await Promise.all([loadInventory(), loadSolicitudes(), loadNotifications()]);
+  await Promise.all([loadInventory(), loadSolicitudes(), loadNotifications(), loadPublicLists()]);
   lastUpdate = nowStamp();
 }
 
@@ -287,7 +306,7 @@ async function submitForm(){
   }
 
   const { data: sol, error } = await sb.from("solicitudes").insert({
-    worker_id: session.user.id, worker_name: profile.nombre, department: profile.departamento || "",
+    worker_id: session.user.id, worker_name: profile.nombre, department: profile.centro_costo || "",
     motivo: formMotivo.trim() || null, foto_url,
   }).select().single();
 
@@ -303,17 +322,40 @@ async function submitForm(){
 }
 
 /* ---- Supervisor ---- */
-async function updateStatus(id, status){
-  await sb.from("solicitudes").update({ status }).eq("id", id);
-  await loadSolicitudes(); render();
-}
+/* ---- Supervisor: ver aprobación por ítem más abajo (updateItemStatus) ---- */
 
 /* ---- Inventario (admin) ---- */
 async function adjustStock(id, delta){
   const item = inventory.find(i=>i.id===id);
-  await sb.from("epp_items").update({ stock: Math.max(0, item.stock + delta) }).eq("id", id);
+  const before = item.stock, after = Math.max(0, before + delta);
+  await sb.from("epp_items").update({ stock: after }).eq("id", id);
+  await logMovement(id, item.name, "ajuste", before, after);
   await loadInventory(); render();
 }
+async function logMovement(itemId, itemName, type, before, after){
+  await sb.from("inventory_movements").insert({
+    item_id: itemId, item_name: itemName, admin_id: session.user.id, admin_name: profile.nombre,
+    change_type: type, qty_before: before, qty_after: after,
+  });
+}
+function setStockAddValue(id, val){ stockAddValue[id] = val; }
+async function applyStockAdd(id){
+  const amount = parseInt(stockAddValue[id], 10);
+  if(!amount || amount <= 0) return;
+  const item = inventory.find(i=>i.id===id);
+  const before = item.stock, after = before + amount;
+  await sb.from("epp_items").update({ stock: after }).eq("id", id);
+  await logMovement(id, item.name, "carga", before, after);
+  stockAddValue[id] = "";
+  await loadInventory(); render();
+}
+async function openInventoryHistory(){
+  menuOpen = false; showInventoryHistory = true; render();
+  const { data } = await sb.from("inventory_movements").select("*").order("created_at", { ascending:false }).limit(300);
+  inventoryMovements = data || [];
+  render();
+}
+function closeInventoryHistory(){ showInventoryHistory = false; render(); }
 
 function openNewItemEditor(){
   itemEditor = { id:null, name:"", unit:"unidad", stock:0, requiresOption:false, optionType:"talla", selected:new Set() };
@@ -323,7 +365,7 @@ function openEditItemEditor(id){
   const item = inventory.find(i=>i.id===id);
   const isNumero = (item.option_label||"").toLowerCase().includes("número") || (item.option_label||"").toLowerCase().includes("numero");
   itemEditor = {
-    id: item.id, name: item.name, unit: item.unit, stock: item.stock,
+    id: item.id, name: item.name, unit: item.unit, stock: item.stock, originalStock: item.stock,
     requiresOption: !!item.options, optionType: isNumero ? "numero" : "talla",
     selected: new Set(item.options || []),
   };
@@ -350,9 +392,13 @@ async function saveItemEditor(){
 
   if(itemEditor.id){
     await sb.from("epp_items").update(payload).eq("id", itemEditor.id);
+    if(Number(itemEditor.stock) !== itemEditor.originalStock){
+      await logMovement(itemEditor.id, payload.name, "edicion", itemEditor.originalStock, Number(itemEditor.stock));
+    }
   } else {
     const id = itemEditor.name.trim().toLowerCase().replace(/[^a-z0-9]+/g,"-").slice(0,40) + "-" + Date.now().toString(36);
     await sb.from("epp_items").insert({ id, ...payload });
+    if(payload.stock > 0) await logMovement(id, payload.name, "carga", 0, payload.stock);
   }
   itemEditor = null;
   await loadInventory(); render();
@@ -368,7 +414,188 @@ async function deleteItem(id){
   await loadInventory(); render();
 }
 
-/* ---- Notificaciones ---- */
+/* ---- Gestión de usuarios (admin) ---- */
+let usersList = [];
+async function openUserManagement(){
+  menuOpen = false; showUserManagement = true; render();
+  const { data } = await sb.from("profiles").select("*").order("nombre");
+  usersList = data || [];
+  render();
+}
+function closeUserManagement(){ showUserManagement = false; editingUser = null; render(); }
+function startEditUser(id){ editingUser = { ...usersList.find(u=>u.id===id) }; render(); }
+function cancelEditUser(){ editingUser = null; render(); }
+function setEditingUserField(field, val){ editingUser[field] = val; }
+async function saveEditUser(){
+  await sb.from("profiles").update({
+    rol: editingUser.rol, cargo: editingUser.cargo, centro_costo: editingUser.centro_costo,
+  }).eq("id", editingUser.id);
+  editingUser = null;
+  const { data } = await sb.from("profiles").select("*").order("nombre");
+  usersList = data || [];
+  render();
+}
+async function addCargo(){
+  if(!newCargoName.trim()) return;
+  await sb.from("cargos").insert({ nombre: newCargoName.trim() });
+  newCargoName = ""; showAddCargo = false;
+  await loadPublicLists(); render();
+}
+async function addCentroCosto(){
+  if(!newCentroCostoName.trim()) return;
+  await sb.from("centros_costo").insert({ nombre: newCentroCostoName.trim() });
+  newCentroCostoName = ""; showAddCentroCosto = false;
+  await loadPublicLists(); render();
+}
+
+/* ---- Aprobación por ítem + certificado de entrega ---- */
+async function updateItemStatus(solicitudId, itemRowId, status){
+  await sb.from("solicitud_items").update({ status }).eq("id", itemRowId);
+  const { data: items } = await sb.from("solicitud_items").select("status").eq("solicitud_id", solicitudId);
+  const pending = (items||[]).some(i => i.status === "pendiente");
+  const anyAutorizado = (items||[]).some(i => i.status === "autorizado");
+  const newStatus = pending ? "espera" : (anyAutorizado ? "autorizadas" : "no_realizados");
+  await sb.from("solicitudes").update({ status: newStatus }).eq("id", solicitudId);
+  await loadSolicitudes(); render();
+}
+
+async function generarCertificado(sol){
+  if(!confirm("¿Confirmas la entrega? Se generará el certificado con folio único y la solicitud pasará a Finalizadas.")) return;
+  const { data: folio, error: folioErr } = await sb.rpc("get_next_folio");
+  if(folioErr){ alert("No se pudo generar el folio: " + folioErr.message); return; }
+  const { data: workerProfile } = await sb.from("profiles").select("rut,cargo,centro_costo").eq("id", sol.worker_id).single();
+  const itemsAut = (sol.solicitud_items||[]).filter(it => it.status === "autorizado").map(it => ({
+    name: itemName(it.item_id), qty: it.qty, option: it.option_value || null,
+  }));
+  const payload = {
+    folio, solicitud_id: sol.id, worker_id: sol.worker_id,
+    worker_name: sol.worker_name, worker_rut: workerProfile?.rut || "",
+    worker_cargo: workerProfile?.cargo || "", worker_centro_costo: workerProfile?.centro_costo || sol.department,
+    contrato: empresaContrato, entrega_nombre: profile.nombre, entrega_cargo: profile.cargo || "",
+    recibe_nombre: sol.worker_name, items_json: itemsAut,
+  };
+  const { data: cert, error } = await sb.from("certificados").insert(payload).select().single();
+  if(error){ alert("Error al generar el certificado: " + error.message); return; }
+  await sb.from("solicitudes").update({ status: "finalizadas" }).eq("id", sol.id);
+  await loadSolicitudes(); render();
+  buildCertificadoPDF(cert);
+}
+
+async function verCertificado(solicitudId){
+  const { data, error } = await sb.from("certificados").select("*").eq("solicitud_id", solicitudId).single();
+  if(error || !data){ alert("No se encontró el certificado de esta solicitud."); return; }
+  buildCertificadoPDF(data);
+}
+
+function buildCertificadoPDF(cert){
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit:"mm", format:"a4" });
+  const W = 210, M = 15, CW = W - 2*M;
+  let y = 20;
+
+  doc.setDrawColor(0); doc.setLineWidth(0.3);
+  doc.rect(M, y, CW, 20);
+  doc.rect(M, y, 40, 20);
+  try { doc.addImage("data:image/jpeg;base64," + LOGO_BASE64, "JPEG", M+3, y+3, 34, 14, undefined, "FAST"); } catch(e){}
+  doc.rect(M+40, y, CW-40-38, 20);
+  doc.setFont("helvetica","bold"); doc.setFontSize(10);
+  doc.text("REGISTRO DE ENTREGA Y RECAMBIO DE ELEMENTOS DE", M+40+(CW-40-38)/2, y+9, {align:"center"});
+  doc.text("PROTECCION PERSONAL (E.P.P.)", M+40+(CW-40-38)/2, y+14, {align:"center"});
+  doc.rect(M+CW-38, y, 38, 20);
+  doc.setFont("helvetica","normal"); doc.setFontSize(8);
+  doc.text("REG-SEG-08", M+CW-36, y+6);
+  doc.text("REV: 00", M+CW-36, y+11);
+  doc.text("Fecha: 01-05-2025", M+CW-36, y+16);
+  doc.setFontSize(7.5);
+  doc.text("Folio: " + cert.folio, M+CW-2, y-1, {align:"right"});
+  y += 24;
+
+  function sectionHeader(label){
+    doc.setFillColor(43,43,43);
+    doc.rect(M, y, CW, 6, "F");
+    doc.setTextColor(255,255,255); doc.setFont("helvetica","bold"); doc.setFontSize(9);
+    doc.text(label, M+2, y+4.2);
+    doc.setTextColor(0,0,0);
+    y += 6;
+  }
+
+  sectionHeader("DATOS DEL TRABAJADOR A QUIEN SE LE ENTREGA EL EPP");
+  const rowH = 7;
+  doc.setFont("helvetica","normal"); doc.setFontSize(9);
+  doc.rect(M, y, CW*0.62, rowH); doc.rect(M+CW*0.62, y, CW*0.38, rowH);
+  doc.text("Nombre:  " + cert.worker_name, M+2, y+4.6);
+  doc.text("Rut:  " + (cert.worker_rut||""), M+CW*0.62+2, y+4.6);
+  y += rowH;
+  doc.rect(M, y, CW*0.62, rowH); doc.rect(M+CW*0.62, y, CW*0.38, rowH);
+  doc.text("Cargo:  " + (cert.worker_cargo||""), M+2, y+4.6);
+  doc.text("Centro de costo:  " + (cert.worker_centro_costo||""), M+CW*0.62+2, y+4.6);
+  y += rowH;
+  doc.rect(M, y, CW, rowH);
+  doc.text("Contrato:  " + (cert.contrato||""), M+2, y+4.6);
+  doc.setFontSize(7); doc.setTextColor(90,90,90);
+  doc.text("* Datos vigentes a la fecha de esta entrega (" + new Date(cert.created_at).toLocaleDateString('es-CL') + ")", M+CW-2, y+4.6, {align:"right"});
+  doc.setTextColor(0,0,0); doc.setFontSize(9);
+  y += rowH + 4;
+
+  sectionHeader("ELEMENTOS DE PROTECCION PERSONAL (E.P.P.) ENTREGADOS");
+  const cols = [["Item",0.08],["Elemento",0.44],["Talla / Número",0.24],["Cantidad",0.24]];
+  let cx = [M]; cols.forEach(([,f])=>cx.push(cx[cx.length-1]+CW*f));
+  const hdrH = 7;
+  doc.setFont("helvetica","bold"); doc.setFontSize(8.5);
+  cols.forEach(([label],i)=>{ doc.rect(cx[i], y, cx[i+1]-cx[i], hdrH); doc.text(label, (cx[i]+cx[i+1])/2, y+4.8, {align:"center"}); });
+  y += hdrH;
+  doc.setFont("helvetica","normal");
+  const items = cert.items_json || [];
+  if(items.length === 0){
+    doc.rect(M, y, CW, rowH);
+    doc.text("Sin ítems entregados en esta solicitud.", M+2, y+4.6);
+    y += rowH;
+  } else {
+    items.forEach((it, idx) => {
+      const vals = [String(idx+1), it.name, it.option||"—", String(it.qty)];
+      vals.forEach((v,i)=>{ doc.rect(cx[i], y, cx[i+1]-cx[i], rowH); doc.text(v, (cx[i]+cx[i+1])/2, y+4.6, {align:"center"}); });
+      y += rowH;
+    });
+  }
+  y += 4;
+
+  const signH = 20;
+  doc.rect(M, y, CW/2, signH); doc.rect(M+CW/2, y, CW/2, signH);
+  doc.setFont("helvetica","bold"); doc.setFontSize(8.5);
+  doc.text("Entrega EPP", M+2, y+4);
+  doc.text("Recibe EPP", M+CW/2+2, y+4);
+  doc.setLineWidth(0.3);
+  doc.line(M+2, y+13, M+CW/2-2, y+13);
+  doc.line(M+CW/2+2, y+13, M+CW-2, y+13);
+  doc.setFont("helvetica","normal"); doc.setFontSize(7.5);
+  doc.text(cert.entrega_nombre + (cert.entrega_cargo?" — "+cert.entrega_cargo:""), M+2, y+16.5);
+  doc.text(cert.recibe_nombre, M+CW/2+2, y+16.5);
+  y += signH + 4;
+
+  sectionHeader("COMPROMISO");
+  const compH = 14;
+  doc.rect(M, y, CW, compH);
+  doc.setFontSize(8);
+  doc.text("Me comprometo a utilizar adecuadamente durante la jornada laboral los elementos de protección", M+2, y+4.5);
+  doc.text("personal recibidos y mantenerlos en buen estado. Declaro que he recibido información sobre el uso", M+2, y+8);
+  doc.text("adecuado de los mismos.", M+2, y+11.5);
+  y += compH;
+  const fwH = 9;
+  doc.rect(M, y, CW, fwH);
+  doc.setFontSize(8);
+  doc.text("Firma del compromiso del trabajador:", M+2, y+4);
+  doc.line(M+70, y+7, M+CW-2, y+7);
+  y += fwH + 4;
+
+  doc.setFontSize(7); doc.setTextColor(90,90,90);
+  const legalH = 12;
+  doc.rect(M, y, CW, legalH);
+  doc.text("La información contenida y datos proporcionados en este registro se utilizará únicamente para control interno,", M+2, y+4);
+  doc.text("cumplimiento legal, normativo y de auditorías internas y externas, a objeto de garantizar la trazabilidad documental.", M+2, y+7.3);
+  doc.text("Por lo anterior, la información aquí contenida no será divulgada ni usada para fines ajenos a los ya señalados.", M+2, y+10.6);
+
+  doc.save(cert.folio + ".pdf");
+}
 async function openNotifs(){
   showNotifs = true; render();
   const unread = notifications.filter(n=>!n.read).map(n=>n.id);
@@ -381,7 +608,7 @@ function closeExportModal(){ showExportModal = false; render(); }
 function exportExcel(workerFilter){
   const base = workerFilter ? solicitudes.filter(s => s.worker_name === workerFilter) : solicitudes;
   const rows = base.map(s => ({
-    Fecha: s.created_at, Trabajador: s.worker_name, Departamento: s.department, Estado: s.status,
+    Fecha: s.created_at, Trabajador: s.worker_name, "Centro de costo": s.department, Estado: s.status,
     Motivo: s.motivo || "", Items: (s.solicitud_items||[]).map(it=>`${itemName(it.item_id)}${it.option_value?` (${it.option_value})`:''} x${it.qty}`).join("; "),
   }));
   const ws = XLSX.utils.json_to_sheet(rows);
@@ -417,8 +644,8 @@ function renderLoginForm(){
   </div>
   ${authError?`<div class="auth-error">${authError}</div>`:""}
   ${authOk?`<div class="auth-ok">${authOk}</div>`:""}
-  <label>Correo corporativo</label>
-  <input type="email" id="login-email" placeholder="tú@empresa.com" value="${loginData.email}" />
+  <label>Correo electrónico</label>
+  <input type="email" id="login-email" placeholder="tú@correo.com" value="${loginData.email}" />
   <label>Contraseña</label>
   <input type="password" id="login-password" placeholder="••••••••" value="${loginData.password}" />
   <button class="submit-btn" id="login-submit" style="background:#00A0AC;">${authLoading?'<span class="spinner"></span>':'Iniciar sesión'}</button>
@@ -436,9 +663,17 @@ function renderSignupForm(){
   <input type="text" id="su-nombre" value="${signupData.nombre}" />
   <label>RUT</label>
   <input type="text" id="su-rut" placeholder="12.345.678-9" value="${signupData.rut}" />
-  <label>Departamento</label>
-  <input type="text" id="su-dept" placeholder="Ej. Producción" value="${signupData.departamento}" />
-  <label>Correo corporativo</label>
+  <label>Centro de costo</label>
+  <select id="su-centro-costo" style="width:100%;border:1px solid #e2e8f0;border-radius:12px;padding:10px 12px;font-size:14px;margin-bottom:12px;font-family:inherit;">
+    <option value="" ${!signupData.centro_costo?'selected':''} disabled>Selecciona centro de costo</option>
+    ${centrosCosto.map(c=>`<option value="${c.nombre}" ${signupData.centro_costo===c.nombre?'selected':''}>${c.nombre}</option>`).join("")}
+  </select>
+  <label>Cargo</label>
+  <select id="su-cargo" style="width:100%;border:1px solid #e2e8f0;border-radius:12px;padding:10px 12px;font-size:14px;margin-bottom:12px;font-family:inherit;">
+    <option value="" ${!signupData.cargo?'selected':''} disabled>Selecciona tu cargo</option>
+    ${cargos.map(c=>`<option value="${c.nombre}" ${signupData.cargo===c.nombre?'selected':''}>${c.nombre}</option>`).join("")}
+  </select>
+  <label>Correo electrónico</label>
   <input type="email" id="su-email" value="${signupData.email}" />
   <label>Contraseña</label>
   <input type="password" id="su-password" placeholder="Mínimo 6 caracteres" value="${signupData.password}" />
@@ -466,11 +701,13 @@ function attachAuthEvents(){
   if(lp) lp.addEventListener("input", e=>loginData.password=e.target.value);
   document.getElementById("login-submit")?.addEventListener("click", doLogin);
 
-  const map = { "su-nombre":"nombre","su-rut":"rut","su-dept":"departamento","su-email":"email","su-password":"password" };
+  const map = { "su-nombre":"nombre","su-rut":"rut","su-email":"email","su-password":"password" };
   Object.entries(map).forEach(([elId,key])=>{
     const el = document.getElementById(elId);
     if(el) el.addEventListener("input", e=>signupData[key]=e.target.value);
   });
+  document.getElementById("su-centro-costo")?.addEventListener("change", e=>signupData.centro_costo=e.target.value);
+  document.getElementById("su-cargo")?.addEventListener("change", e=>signupData.cargo=e.target.value);
   document.getElementById("signup-submit")?.addEventListener("click", doSignup);
 
   const fe = document.getElementById("forgot-email");
@@ -525,14 +762,26 @@ function renderMainApp(){
           <div class="dept">${ICONS.building} ${s.department}</div>
           ${s.foto_url?`<img src="${s.foto_url}" class="foto-thumb" />`:""}
           ${s.motivo?`<div class="motivo">"${s.motivo}"</div>`:""}
-          <ul class="items">${(s.solicitud_items||[]).map(it=>`<li>• ${itemName(it.item_id)}${it.option_value?` (${it.option_value})`:''} × ${it.qty}</li>`).join("")}</ul>
-          ${isSupervisor() && s.status==="espera" ? `
-            <div class="actions">
-              <button style="background:${STATUS.autorizadas.hex}" data-action="autorizadas" data-id="${s.id}">Autorizar</button>
-              <button style="background:${STATUS.no_realizados.hex}" data-action="no_realizados" data-id="${s.id}">Rechazar</button>
-            </div>` : ""}
+          <ul class="items" style="list-style:none;padding:0;">
+            ${(s.solicitud_items||[]).map(it => {
+              const st = it.status || "pendiente";
+              const badgeColor = st==="autorizado" ? STATUS.autorizadas.hex : st==="rechazado" ? STATUS.no_realizados.hex : "#94a3b8";
+              const badgeLabel = st==="autorizado" ? "Autorizado" : st==="rechazado" ? "Rechazado" : "Pendiente";
+              return `
+              <li style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f1f5f9;">
+                <span>• ${itemName(it.item_id)}${it.option_value?` (${it.option_value})`:''} × ${it.qty}</span>
+                ${isSupervisor() && st==="pendiente" ? `
+                  <span style="display:flex;gap:4px;">
+                    <button data-item-action="autorizado" data-item-id="${it.id}" data-sol-id="${s.id}" style="border:none;background:${STATUS.autorizadas.hex};color:#fff;border-radius:6px;padding:3px 7px;font-size:10px;font-weight:700;cursor:pointer;">Aprobar</button>
+                    <button data-item-action="rechazado" data-item-id="${it.id}" data-sol-id="${s.id}" style="border:none;background:${STATUS.no_realizados.hex};color:#fff;border-radius:6px;padding:3px 7px;font-size:10px;font-weight:700;cursor:pointer;">Rechazar</button>
+                  </span>` : `<span style="font-size:10px;font-weight:700;color:${badgeColor};">${badgeLabel}</span>`}
+              </li>`;
+            }).join("")}
+          </ul>
           ${isSupervisor() && s.status==="autorizadas" ? `
-            <button style="background:${STATUS.finalizadas.hex};color:#fff;border:none;font-weight:700;font-size:12px;padding:8px;border-radius:10px;width:100%;cursor:pointer;" data-action="finalizadas" data-id="${s.id}">Marcar como entregado</button>` : ""}
+            <button style="background:${STATUS.finalizadas.hex};color:#fff;border:none;font-weight:700;font-size:12px;padding:8px;border-radius:10px;width:100%;cursor:pointer;margin-top:8px;" data-generar-cert="${s.id}">Marcar como entregado (genera certificado)</button>` : ""}
+          ${s.status==="finalizadas" ? `
+            <button style="background:#f1f5f9;color:#334155;border:none;font-weight:700;font-size:12px;padding:8px;border-radius:10px;width:100%;cursor:pointer;margin-top:8px;display:flex;align-items:center;justify-content:center;gap:6px;" data-ver-cert="${s.id}">${ICONS.download} Ver certificado (PDF)</button>` : ""}
         </div>
       `).join("")}
     </main>
@@ -549,6 +798,8 @@ function renderMainApp(){
     ${showNotifs ? renderNotifsModal() : ""}
     ${showExportModal ? renderExportModal() : ""}
     ${itemEditor ? renderItemEditorModal() : ""}
+    ${showUserManagement ? renderUserManagementModal() : ""}
+    ${showInventoryHistory ? renderInventoryHistoryModal() : ""}
   `;
   attachAppEvents();
 }
@@ -560,10 +811,12 @@ function renderSideMenu(){
       <button class="icon-btn" id="menu-close" style="align-self:flex-end;">${ICONS.x}</button>
       <div style="padding:10px 8px 16px;border-bottom:1px solid #f1f5f9;margin-bottom:8px;">
         <div style="font-weight:700;font-size:14px;color:#1e293b;">${profile?.nombre || ""}</div>
-        <div style="font-size:11px;color:#94a3b8;">${profile?.departamento || ""}</div>
+        <div style="font-size:11px;color:#94a3b8;">${profile?.cargo || ""}${profile?.centro_costo?` · ${profile.centro_costo}`:''}</div>
         <span class="role-chip">${(profile?.rol||"").toUpperCase()}</span>
       </div>
       ${isAdmin() ? `<button class="menu-item" id="open-inventory">${ICONS.package} Inventario de EPP</button>` : ""}
+      ${isAdmin() ? `<button class="menu-item" id="open-inventory-history">${ICONS.fileTextSmall} Historial de inventario</button>` : ""}
+      ${isAdmin() ? `<button class="menu-item" id="open-user-mgmt">${ICONS.user} Gestionar usuarios</button>` : ""}
       <button class="menu-item" id="logout-btn">${ICONS.logout} Cerrar sesión</button>
     </div>
     <div class="side-backdrop" id="side-backdrop"></div>
@@ -614,14 +867,20 @@ function renderInventoryModal(){
     <div class="sheet">
       <div class="sheet-head"><h2 style="display:flex;align-items:center;gap:8px;">${ICONS.package} Inventario de EPP</h2><button class="icon-btn" id="inv-close">${ICONS.x}</button></div>
       ${inventory.map(item => `
-        <div class="item-row">
-          <div style="flex:1;"><div class="name">${item.name}</div><div class="stock">${item.unit}${item.option_label?` · ${item.option_label} (${(item.options||[]).join(', ')})`:''}</div></div>
-          <div class="qty-ctrl">
-            <button data-stock-dec="${item.id}">−</button><span>${item.stock}</span><button data-stock-inc="${item.id}">+</button>
+        <div class="item-row" style="flex-direction:column;align-items:stretch;">
+          <div style="display:flex;align-items:center;">
+            <div style="flex:1;"><div class="name">${item.name}</div><div class="stock">${item.unit}${item.option_label?` · ${item.option_label} (${(item.options||[]).join(', ')})`:''}</div></div>
+            <div class="qty-ctrl">
+              <button data-stock-dec="${item.id}">−</button><span>${item.stock}</span><button data-stock-inc="${item.id}">+</button>
+            </div>
+            <div style="display:flex;gap:6px;margin-left:8px;">
+              <button data-edit-item="${item.id}" style="border:none;background:#f1f5f9;border-radius:8px;width:28px;height:28px;cursor:pointer;font-size:14px;">✎</button>
+              <button data-delete-item="${item.id}" style="border:none;background:#fdeae4;color:#c0391a;border-radius:8px;width:28px;height:28px;cursor:pointer;font-size:14px;">🗑</button>
+            </div>
           </div>
-          <div style="display:flex;gap:6px;margin-left:8px;">
-            <button data-edit-item="${item.id}" style="border:none;background:#f1f5f9;border-radius:8px;width:28px;height:28px;cursor:pointer;font-size:14px;">✎</button>
-            <button data-delete-item="${item.id}" style="border:none;background:#fdeae4;color:#c0391a;border-radius:8px;width:28px;height:28px;cursor:pointer;font-size:14px;">🗑</button>
+          <div style="display:flex;gap:6px;margin-top:8px;">
+            <input type="text" inputmode="numeric" placeholder="Sumar cantidad (ej. 1239)" data-stock-add-input="${item.id}" value="${stockAddValue[item.id]||''}" style="flex:1;margin-bottom:0;padding:7px 10px;font-size:12px;" />
+            <button data-stock-add-btn="${item.id}" style="background:#00A0AC;color:#fff;border:none;border-radius:10px;padding:0 12px;font-size:12px;font-weight:700;cursor:pointer;">Sumar</button>
           </div>
         </div>
       `).join("")}
@@ -664,6 +923,80 @@ function renderItemEditorModal(){
         </div>
       ` : ""}
       <button class="submit-btn" id="save-item-btn" style="background:#00A0AC;">Guardar artículo</button>
+    </div>
+  </div>`;
+}
+
+function renderUserManagementModal(){
+  return `
+  <div class="overlay" id="usermgmt-overlay">
+    <div class="sheet">
+      <div class="sheet-head"><h2 style="display:flex;align-items:center;gap:8px;">${ICONS.user} Gestionar usuarios</h2><button class="icon-btn" id="usermgmt-close">${ICONS.x}</button></div>
+      ${usersList.map(u => {
+        const editing = editingUser && editingUser.id === u.id;
+        return `
+        <div class="card" style="margin-bottom:8px;">
+          <div style="font-weight:700;font-size:13px;color:#1e293b;">${u.nombre}</div>
+          <div style="font-size:11px;color:#94a3b8;margin-bottom:8px;">RUT ${u.rut||'—'}</div>
+          ${editing ? `
+            <label>Rol</label>
+            <select data-edit-field="rol" style="width:100%;border:1px solid #e2e8f0;border-radius:10px;padding:8px;font-size:13px;margin-bottom:8px;">
+              ${["trabajador","supervisor","administrador"].map(r=>`<option value="${r}" ${editingUser.rol===r?'selected':''}>${r}</option>`).join("")}
+            </select>
+            <label>Cargo</label>
+            <select data-edit-field="cargo" style="width:100%;border:1px solid #e2e8f0;border-radius:10px;padding:8px;font-size:13px;margin-bottom:8px;">
+              <option value="">— sin cargo —</option>
+              ${cargos.map(c=>`<option value="${c.nombre}" ${editingUser.cargo===c.nombre?'selected':''}>${c.nombre}</option>`).join("")}
+            </select>
+            <label>Centro de costo</label>
+            <select data-edit-field="centro_costo" style="width:100%;border:1px solid #e2e8f0;border-radius:10px;padding:8px;font-size:13px;margin-bottom:10px;">
+              <option value="">— sin centro de costo —</option>
+              ${centrosCosto.map(c=>`<option value="${c.nombre}" ${editingUser.centro_costo===c.nombre?'selected':''}>${c.nombre}</option>`).join("")}
+            </select>
+            <div style="display:flex;gap:8px;">
+              <button id="save-user-btn" style="flex:1;background:#00A0AC;color:#fff;border:none;border-radius:10px;padding:8px;font-weight:700;font-size:12px;cursor:pointer;">Guardar</button>
+              <button id="cancel-user-btn" style="flex:1;background:#f1f5f9;color:#334155;border:none;border-radius:10px;padding:8px;font-weight:700;font-size:12px;cursor:pointer;">Cancelar</button>
+            </div>
+          ` : `
+            <div style="font-size:12px;color:#475569;">Rol: <b>${u.rol}</b></div>
+            <div style="font-size:12px;color:#475569;">Cargo: ${u.cargo || '—'}</div>
+            <div style="font-size:12px;color:#475569;margin-bottom:8px;">Centro de costo: ${u.centro_costo || '—'}</div>
+            <button data-start-edit-user="${u.id}" style="border:1px solid #e2e8f0;background:#fff;border-radius:10px;padding:6px 10px;font-size:12px;font-weight:700;color:#334155;cursor:pointer;">Editar</button>
+          `}
+        </div>`;
+      }).join("")}
+
+      <div style="border-top:1px solid #f1f5f9;margin-top:10px;padding-top:14px;">
+        <button class="menu-item" id="toggle-add-cargo" style="border:1px dashed #cbd5e1;border-radius:10px;">+ Agregar cargo nuevo</button>
+        ${showAddCargo ? `
+          <div style="display:flex;gap:8px;margin-top:8px;">
+            <input type="text" id="new-cargo-input" placeholder="Nombre del cargo" value="${newCargoName}" style="flex:1;" />
+            <button id="save-cargo-btn" style="background:#00A0AC;color:#fff;border:none;border-radius:10px;padding:0 14px;font-weight:700;font-size:12px;">Agregar</button>
+          </div>` : ""}
+        <button class="menu-item" id="toggle-add-cc" style="border:1px dashed #cbd5e1;border-radius:10px;margin-top:8px;">+ Agregar centro de costo nuevo</button>
+        ${showAddCentroCosto ? `
+          <div style="display:flex;gap:8px;margin-top:8px;">
+            <input type="text" id="new-cc-input" placeholder="Nombre del centro de costo" value="${newCentroCostoName}" style="flex:1;" />
+            <button id="save-cc-btn" style="background:#00A0AC;color:#fff;border:none;border-radius:10px;padding:0 14px;font-weight:700;font-size:12px;">Agregar</button>
+          </div>` : ""}
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderInventoryHistoryModal(){
+  return `
+  <div class="overlay" id="invhist-overlay">
+    <div class="sheet">
+      <div class="sheet-head"><h2>Historial de inventario</h2><button class="icon-btn" id="invhist-close">${ICONS.x}</button></div>
+      ${inventoryMovements.length===0 ? `<p style="color:#94a3b8;font-size:13px;text-align:center;padding:20px 0;">Sin movimientos registrados</p>` :
+        inventoryMovements.map(m => `
+        <div class="card" style="margin-bottom:8px;">
+          <div style="font-weight:700;font-size:13px;color:#1e293b;">${m.item_name}</div>
+          <div style="font-size:12px;color:#475569;">${m.change_type==='ajuste'?'Ajuste manual':m.change_type==='carga'?'Carga de stock':'Edición de artículo'}: ${m.qty_before} → ${m.qty_after}</div>
+          <div style="font-size:11px;color:#94a3b8;">${m.admin_name || ''} · ${new Date(m.created_at).toLocaleString('es-CL')}</div>
+        </div>
+      `).join("")}
     </div>
   </div>`;
 }
@@ -719,6 +1052,8 @@ function attachAppEvents(){
   document.querySelectorAll("[data-delete-item]").forEach(el=>el.addEventListener("click", ()=>deleteItem(el.dataset.deleteItem)));
   document.querySelectorAll("[data-stock-inc]").forEach(el=>el.addEventListener("click", ()=>adjustStock(el.dataset.stockInc, 1)));
   document.querySelectorAll("[data-stock-dec]").forEach(el=>el.addEventListener("click", ()=>adjustStock(el.dataset.stockDec, -1)));
+  document.querySelectorAll("[data-stock-add-input]").forEach(el=>el.addEventListener("input", e=>setStockAddValue(el.dataset.stockAddInput, e.target.value)));
+  document.querySelectorAll("[data-stock-add-btn]").forEach(el=>el.addEventListener("click", ()=>applyStockAdd(el.dataset.stockAddBtn)));
 
   document.getElementById("item-editor-close")?.addEventListener("click", closeItemEditor);
   document.getElementById("item-editor-overlay")?.addEventListener("click", (e)=>{ if(e.target.id==="item-editor-overlay") closeItemEditor(); });
@@ -738,11 +1073,34 @@ function attachAppEvents(){
   document.getElementById("foto-input")?.addEventListener("change", onFotoChange);
 
   document.querySelectorAll("[data-tab]").forEach(el=>el.addEventListener("click", ()=>setTab(el.dataset.tab)));
-  document.querySelectorAll("[data-action]").forEach(el=>el.addEventListener("click", ()=>updateStatus(el.dataset.id, el.dataset.action)));
+  document.querySelectorAll("[data-item-action]").forEach(el=>el.addEventListener("click", ()=>updateItemStatus(el.dataset.solId, el.dataset.itemId, el.dataset.itemAction)));
+  document.querySelectorAll("[data-generar-cert]").forEach(el=>el.addEventListener("click", ()=>{
+    const sol = solicitudes.find(s=>s.id===el.dataset.generarCert);
+    if(sol) generarCertificado(sol);
+  }));
+  document.querySelectorAll("[data-ver-cert]").forEach(el=>el.addEventListener("click", ()=>verCertificado(el.dataset.verCert)));
   document.querySelectorAll("[data-toggle]").forEach(el=>el.addEventListener("click", ()=>toggleFormItem(el.dataset.toggle)));
   document.querySelectorAll("[data-qty-inc]").forEach(el=>el.addEventListener("click", ()=>setFormQty(el.dataset.qtyInc, (formSelection[el.dataset.qtyInc]?.qty||1)+1)));
   document.querySelectorAll("[data-qty-dec]").forEach(el=>el.addEventListener("click", ()=>setFormQty(el.dataset.qtyDec, (formSelection[el.dataset.qtyDec]?.qty||1)-1)));
   document.querySelectorAll("[data-option-select]").forEach(el=>el.addEventListener("change", (e)=>setFormOption(el.dataset.optionSelect, e.target.value)));
+
+  document.getElementById("open-inventory-history")?.addEventListener("click", openInventoryHistory);
+  document.getElementById("invhist-close")?.addEventListener("click", closeInventoryHistory);
+  document.getElementById("invhist-overlay")?.addEventListener("click", (e)=>{ if(e.target.id==="invhist-overlay") closeInventoryHistory(); });
+
+  document.getElementById("open-user-mgmt")?.addEventListener("click", openUserManagement);
+  document.getElementById("usermgmt-close")?.addEventListener("click", closeUserManagement);
+  document.getElementById("usermgmt-overlay")?.addEventListener("click", (e)=>{ if(e.target.id==="usermgmt-overlay") closeUserManagement(); });
+  document.querySelectorAll("[data-start-edit-user]").forEach(el=>el.addEventListener("click", ()=>startEditUser(el.dataset.startEditUser)));
+  document.getElementById("save-user-btn")?.addEventListener("click", saveEditUser);
+  document.getElementById("cancel-user-btn")?.addEventListener("click", cancelEditUser);
+  document.querySelectorAll("[data-edit-field]").forEach(el=>el.addEventListener("change", (e)=>setEditingUserField(el.dataset.editField, e.target.value)));
+  document.getElementById("toggle-add-cargo")?.addEventListener("click", ()=>{ showAddCargo=!showAddCargo; render(); });
+  document.getElementById("new-cargo-input")?.addEventListener("input", e=>newCargoName=e.target.value);
+  document.getElementById("save-cargo-btn")?.addEventListener("click", addCargo);
+  document.getElementById("toggle-add-cc")?.addEventListener("click", ()=>{ showAddCentroCosto=!showAddCentroCosto; render(); });
+  document.getElementById("new-cc-input")?.addEventListener("input", e=>newCentroCostoName=e.target.value);
+  document.getElementById("save-cc-btn")?.addEventListener("click", addCentroCosto);
 }
 
 /* ================= INIT ================= */
