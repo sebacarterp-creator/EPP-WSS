@@ -153,6 +153,15 @@ function nowStamp(){
   return `${p(d.getDate())}-${p(d.getMonth()+1)}-${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 function itemName(id){ return inventory.find(i=>i.id===id)?.name ?? id; }
+function stockAlertColor(stock){
+  if(stock <= 10) return "#E4572E";
+  if(stock <= 20) return "#F5B301";
+  return null;
+}
+function stockLabel(stock){
+  const c = stockAlertColor(stock);
+  return c ? `<span style="color:${c};font-weight:700;">⚠ ${stock}</span>` : String(stock);
+}
 function isSupervisor(){ return profile && (profile.rol === "supervisor" || profile.rol === "administrador"); }
 function isAdmin(){ return profile && profile.rol === "administrador"; }
 
@@ -717,9 +726,18 @@ function attachAuthEvents(){
 
 function renderMainApp(){
   const app = document.getElementById("app");
+  const visibleTabs = isSupervisor() ? STATUS_ORDER : STATUS_ORDER.filter(k => k !== "no_realizados");
+  if(!isSupervisor() && tab === "no_realizados") tab = "espera";
+
+  const tieneRechazado = s => (s.solicitud_items||[]).some(it => it.status === "rechazado");
   const counts = { espera:0, autorizadas:0, finalizadas:0, no_realizados:0 };
-  solicitudes.forEach(s => counts[s.status] = (counts[s.status]||0)+1);
-  const filtered = solicitudes.filter(s => s.status === tab);
+  solicitudes.forEach(s => {
+    counts[s.status] = (counts[s.status]||0)+1;
+    if(tieneRechazado(s)) counts.no_realizados = (counts.no_realizados||0)+1;
+  });
+  const filtered = tab === "no_realizados"
+    ? solicitudes.filter(tieneRechazado)
+    : solicitudes.filter(s => s.status === tab);
   const unreadCount = notifications.filter(n=>!n.read).length;
 
   app.innerHTML = `
@@ -736,8 +754,8 @@ function renderMainApp(){
       <button class="refresh-btn ${spinning?'spin':''}" id="refresh-btn">${ICONS.refresh} ACTUALIZAR</button>
     </div>
 
-    <div class="tabs">
-      ${STATUS_ORDER.map(key => {
+    <div class="tabs" style="grid-template-columns:repeat(${visibleTabs.length},1fr);">
+      ${visibleTabs.map(key => {
         const s = STATUS[key];
         const icon = key==="espera"?ICONS.clock:key==="autorizadas"?ICONS.key:key==="finalizadas"?ICONS.check:ICONS.trash;
         return `<button class="tab ${tab===key?'active':''}" style="background:${s.hex}" data-tab="${key}">
@@ -763,13 +781,13 @@ function renderMainApp(){
           ${s.foto_url?`<img src="${s.foto_url}" class="foto-thumb" />`:""}
           ${s.motivo?`<div class="motivo">"${s.motivo}"</div>`:""}
           <ul class="items" style="list-style:none;padding:0;">
-            ${(s.solicitud_items||[]).map(it => {
+            ${(s.solicitud_items||[]).filter(it => isSupervisor() || it.status !== "rechazado").map(it => {
               const st = it.status || "pendiente";
               const badgeColor = st==="autorizado" ? STATUS.autorizadas.hex : st==="rechazado" ? STATUS.no_realizados.hex : "#94a3b8";
               const badgeLabel = st==="autorizado" ? "Autorizado" : st==="rechazado" ? "Rechazado" : "Pendiente";
               return `
               <li style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f1f5f9;">
-                <span>• ${itemName(it.item_id)}${it.option_value?` (${it.option_value})`:''} × ${it.qty}${isSupervisor()?` <span style="color:#94a3b8;font-size:10px;">(stock: ${inventory.find(i=>i.id===it.item_id)?.stock ?? '—'})</span>`:''}</span>
+                <span>• ${itemName(it.item_id)}${it.option_value?` (${it.option_value})`:''} × ${it.qty}${isSupervisor()?` <span style="font-size:10px;">(stock: ${stockLabel(inventory.find(i=>i.id===it.item_id)?.stock ?? 0)})</span>`:''}</span>
                 ${isSupervisor() && st==="pendiente" ? `
                   <span style="display:flex;gap:4px;">
                     <button data-item-action="autorizado" data-item-id="${it.id}" data-sol-id="${s.id}" style="border:none;background:${STATUS.autorizadas.hex};color:#fff;border-radius:6px;padding:3px 7px;font-size:10px;font-weight:700;cursor:pointer;">Aprobar</button>
@@ -839,7 +857,7 @@ function renderFormModal(){
         <div class="item-row ${active?'active':''}">
           <div data-toggle="${item.id}" style="flex:1;cursor:pointer;">
             <div class="name">${item.name}</div>
-            ${!isSupervisor() ? "" : `<div class="stock">Stock: ${item.stock} ${item.unit}</div>`}
+            ${!isSupervisor() ? "" : `<div class="stock">Stock: ${stockLabel(item.stock)} ${item.unit}</div>`}
           </div>
           ${active ? `<div class="qty-ctrl"><button data-qty-dec="${item.id}">−</button><span>${sel.qty}</span><button data-qty-inc="${item.id}">+</button></div>` : ""}
           ${active && needsOption ? `
@@ -871,7 +889,7 @@ function renderInventoryModal(){
           <div style="display:flex;align-items:center;">
             <div style="flex:1;"><div class="name">${item.name}</div><div class="stock">${item.unit}${item.option_label?` · ${item.option_label} (${(item.options||[]).join(', ')})`:''}</div></div>
             <div class="qty-ctrl">
-              <button data-stock-dec="${item.id}">−</button><span>${item.stock}</span><button data-stock-inc="${item.id}">+</button>
+              <button data-stock-dec="${item.id}">−</button><span>${stockLabel(item.stock)}</span><button data-stock-inc="${item.id}">+</button>
             </div>
             <div style="display:flex;gap:6px;margin-left:8px;">
               <button data-edit-item="${item.id}" style="border:none;background:#f1f5f9;border-radius:8px;width:28px;height:28px;cursor:pointer;font-size:14px;">✎</button>
