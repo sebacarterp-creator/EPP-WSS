@@ -631,11 +631,21 @@ function exportExcel(workerFilter){
 /* ================= RENDER ================= */
 function render(){
   const app = document.getElementById("app");
+  const openSheet = document.querySelector(".sheet");
+  const savedSheetScroll = openSheet ? openSheet.scrollTop : null;
+  const savedWindowScroll = window.scrollY;
+
   if(view === "loading"){ app.innerHTML = `<div class="loading-screen">Cargando…</div>`; return; }
   if(view === "login"){ app.innerHTML = renderAuthShell(renderLoginForm()); attachAuthEvents(); return; }
   if(view === "signup"){ app.innerHTML = renderAuthShell(renderSignupForm()); attachAuthEvents(); return; }
   if(view === "forgot"){ app.innerHTML = renderAuthShell(renderForgotForm()); attachAuthEvents(); return; }
   renderMainApp();
+
+  if(savedSheetScroll !== null){
+    const newSheet = document.querySelector(".sheet");
+    if(newSheet) newSheet.scrollTop = savedSheetScroll;
+  }
+  window.scrollTo(0, savedWindowScroll);
 }
 
 function renderAuthShell(inner){
@@ -787,7 +797,7 @@ function renderMainApp(){
               const badgeLabel = st==="autorizado" ? "Autorizado" : st==="rechazado" ? "Rechazado" : "Pendiente";
               return `
               <li style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f1f5f9;">
-                <span>• ${itemName(it.item_id)}${it.option_value?` (${it.option_value})`:''} × ${it.qty}${isSupervisor()?` <span style="font-size:10px;">(stock: ${stockLabel(inventory.find(i=>i.id===it.item_id)?.stock ?? 0)})</span>`:''}</span>
+                <span>• ${itemName(it.item_id)}${it.option_value?` (${it.option_value})`:''} × ${it.qty}${isSupervisor() && st==="pendiente"?` <span style="font-size:10px;">(stock: ${stockLabel(inventory.find(i=>i.id===it.item_id)?.stock ?? 0)})</span>`:''}</span>
                 ${isSupervisor() && st==="pendiente" ? `
                   <span style="display:flex;gap:4px;">
                     <button data-item-action="autorizado" data-item-id="${it.id}" data-sol-id="${s.id}" style="border:none;background:${STATUS.autorizadas.hex};color:#fff;border-radius:6px;padding:3px 7px;font-size:10px;font-weight:700;cursor:pointer;">Aprobar</button>
@@ -897,7 +907,7 @@ function renderInventoryModal(){
             </div>
           </div>
           <div style="display:flex;gap:6px;margin-top:8px;">
-            <input type="text" inputmode="numeric" placeholder="Sumar cantidad (ej. 1239)" data-stock-add-input="${item.id}" value="${stockAddValue[item.id]||''}" style="flex:1;margin-bottom:0;padding:7px 10px;font-size:12px;" />
+            <input type="text" inputmode="numeric" placeholder="Cantidad a sumar" data-stock-add-input="${item.id}" value="${stockAddValue[item.id]||''}" style="flex:1;margin-bottom:0;padding:7px 10px;font-size:12px;" />
             <button data-stock-add-btn="${item.id}" style="background:#00A0AC;color:#fff;border:none;border-radius:10px;padding:0 12px;font-size:12px;font-weight:700;cursor:pointer;">Sumar</button>
           </div>
         </div>
