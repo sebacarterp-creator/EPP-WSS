@@ -526,17 +526,15 @@ function buildCertificadoPDF(cert){
   doc.text("Nombre:  " + cert.worker_name, M+2, y+4.6);
   doc.text("Rut:  " + (cert.worker_rut||""), M+CW*0.62+2, y+4.6);
   y += rowH;
-  doc.rect(M, y, CW*0.62, rowH); doc.rect(M+CW*0.62, y, CW*0.38, rowH);
+  doc.rect(M, y, CW, rowH);
   doc.text("Cargo:  " + (cert.worker_cargo||""), M+2, y+4.6);
-  doc.text("Centro de costo:  " + (cert.worker_centro_costo||""), M+CW*0.62+2, y+4.6);
   y += rowH;
   doc.rect(M, y, CW, rowH);
   doc.text("Contrato:  " + (cert.contrato||""), M+2, y+4.6);
   y += rowH;
 
-  doc.rect(M, y, CW/2, rowH); doc.rect(M+CW/2, y, CW/2, rowH);
-  doc.text("Fecha de solicitud:  " + new Date(cert.solicitud_fecha).toLocaleDateString('es-CL'), M+2, y+4.6);
-  doc.text("Fecha de entrega:  " + new Date(cert.created_at).toLocaleDateString('es-CL'), M+CW/2+2, y+4.6);
+  doc.rect(M, y, CW, rowH);
+  doc.text("Fecha (día/mes/año):  " + new Date(cert.created_at).toLocaleDateString('es-CL'), M+2, y+4.6);
   y += rowH + 4;
 
   sectionHeader("ELEMENTOS DE PROTECCION PERSONAL (E.P.P.) ENTREGADOS");
