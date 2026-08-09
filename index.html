@@ -163,6 +163,26 @@ function stockLabel(stock){
   const c = stockAlertColor(stock);
   return c ? `<span style="color:${c};font-weight:700;">⚠ ${stock}</span>` : String(stock);
 }
+function pluralizeUnit(unit, qty){
+  if(!unit) return "";
+  if(Number(qty) === 1) return unit;
+  const vowels = "aeiouáéíóú";
+  const last = unit.trim().slice(-1).toLowerCase();
+  return vowels.includes(last) ? unit + "s" : unit + "es";
+}
+function qtyWithUnit(qty, unit){
+  return `${qty} ${pluralizeUnit(unit, qty)}`;
+}
+function movementLabel(m){
+  const before = m.qty_before ?? 0, after = m.qty_after ?? 0;
+  const delta = after - before;
+  const tipo = m.change_type==='ajuste' ? 'Ajuste manual' : m.change_type==='carga' ? 'Carga de stock' : 'Edición de artículo';
+  let detalle;
+  if(delta > 0) detalle = `Se agregaron ${delta} (quedando en stock ${after})`;
+  else if(delta < 0) detalle = `Se quitaron ${Math.abs(delta)} (quedando en stock ${after})`;
+  else detalle = `Sin cambio de cantidad (stock ${after})`;
+  return `${tipo}: ${detalle}`;
+}
 function isSupervisor(){ return profile && (profile.rol === "supervisor" || profile.rol === "administrador"); }
 function isAdmin(){ return profile && profile.rol === "administrador"; }
 
@@ -482,7 +502,8 @@ async function confirmReject(){
   const { solicitudId, itemId } = rejectModal;
   const motivo = rejectModal.motivo.trim();
   const sol = solicitudes.find(s => s.id === solicitudId);
-  const itemRow = (sol.solicitud_items||[]).find(it => it.id === itemId);
+  const itemRow = (sol?.solicitud_items||[]).find(it => String(it.id) === String(itemId));
+  if(!sol || !itemRow){ alert("No se pudo encontrar el ítem a rechazar. Intenta refrescar la app."); return; }
   const invItem = inventory.find(i => i.id === itemRow.item_id);
 
   await sb.from("solicitud_items").update({ status:"rechazado", motivo_rechazo: motivo }).eq("id", itemId);
@@ -494,6 +515,7 @@ async function confirmReject(){
       folio, solicitud_id: solicitudId, solicitud_item_id: itemId, worker_id: sol.worker_id,
       worker_name: sol.worker_name, worker_rut: workerProfile?.rut||"", worker_cargo: workerProfile?.cargo||"",
       item_name: itemName(itemRow.item_id), item_option: itemRow.option_value||null, item_qty: itemRow.qty,
+      item_unit: invItem?.unit || "unidad",
       stock_al_momento: invItem?.stock ?? null, motivo,
       rechazado_por_nombre: profile.nombre, rechazado_por_cargo: profile.cargo||"",
     };
@@ -554,7 +576,7 @@ function buildRechazoPDF(rep){
   cols.forEach(([label],i)=>{ doc.rect(cx[i], y, cx[i+1]-cx[i], hdrH); doc.text(label, (cx[i]+cx[i+1])/2, y+4.8, {align:"center"}); });
   y += hdrH;
   doc.setFont("helvetica","normal");
-  const vals = [rep.item_name, rep.item_option||"—", String(rep.item_qty), (rep.stock_al_momento??"—")+" unidades"];
+  const vals = [rep.item_name, rep.item_option||"—", qtyWithUnit(rep.item_qty, rep.item_unit||"unidad"), (rep.stock_al_momento??"—")+" unidades"];
   vals.forEach((v,i)=>{ doc.rect(cx[i], y, cx[i+1]-cx[i], rowH); doc.text(v, (cx[i]+cx[i+1])/2, y+4.6, {align:"center"}); });
   y += rowH + 5;
 
@@ -589,6 +611,7 @@ async function generarCertificado(sol){
   const { data: workerProfile } = await sb.from("profiles").select("rut,cargo,centro_costo").eq("id", sol.worker_id).single();
   const itemsAut = (sol.solicitud_items||[]).filter(it => it.status === "autorizado").map(it => ({
     name: itemName(it.item_id), qty: it.qty, option: it.option_value || null,
+    unit: inventory.find(i=>i.id===it.item_id)?.unit || "unidad",
   }));
   const payload = {
     folio, solicitud_id: sol.id, solicitud_fecha: sol.created_at, worker_id: sol.worker_id,
@@ -675,7 +698,7 @@ function buildCertificadoPDF(cert){
     y += rowH;
   } else {
     items.forEach((it, idx) => {
-      const vals = [String(idx+1), it.name, it.option||"—", String(it.qty)];
+      const vals = [String(idx+1), it.name, it.option||"—", qtyWithUnit(it.qty, it.unit)];
       vals.forEach((v,i)=>{ doc.rect(cx[i], y, cx[i+1]-cx[i], rowH); doc.text(v, (cx[i]+cx[i+1])/2, y+4.6, {align:"center"}); });
       y += rowH;
     });
@@ -732,7 +755,7 @@ function exportExcel(workerFilter){
   const base = workerFilter ? solicitudes.filter(s => s.worker_name === workerFilter) : solicitudes;
   const rows = base.map(s => ({
     Fecha: s.created_at, Trabajador: s.worker_name, "Centro de costo": s.department, Estado: s.status,
-    Motivo: s.motivo || "", Items: (s.solicitud_items||[]).map(it=>`${itemName(it.item_id)}${it.option_value?` (${it.option_value})`:''} x${it.qty}`).join("; "),
+    Motivo: s.motivo || "", Items: (s.solicitud_items||[]).map(it=>`${itemName(it.item_id)}${it.option_value?` (${it.option_value})`:''} - ${qtyWithUnit(it.qty, inventory.find(i=>i.id===it.item_id)?.unit)}`).join("; "),
   }));
   const ws = XLSX.utils.json_to_sheet(rows);
   const wb = XLSX.utils.book_new();
@@ -909,7 +932,7 @@ function renderMainApp(){
               ${(s.solicitud_items||[]).filter(it => it.status === "rechazado").map(it => `
                 <li style="padding:6px 0;border-bottom:1px solid #f1f5f9;">
                   <div style="display:flex;align-items:center;justify-content:space-between;">
-                    <span>• ${itemName(it.item_id)}${it.option_value?` (${it.option_value})`:''} × ${it.qty}</span>
+                    <span>• ${itemName(it.item_id)}${it.option_value?` (${it.option_value})`:''} — ${qtyWithUnit(it.qty, inventory.find(i=>i.id===it.item_id)?.unit)}</span>
                     <button data-ver-reporte="${it.id}" style="border:none;background:#f1f5f9;color:#334155;border-radius:6px;padding:3px 8px;font-size:10px;font-weight:700;cursor:pointer;">${ICONS.download} Reporte</button>
                   </div>
                   ${it.motivo_rechazo ? `<div class="motivo" style="margin-top:3px;">"${it.motivo_rechazo}"</div>` : ""}
@@ -920,7 +943,7 @@ function renderMainApp(){
                 const st = it.status || "pendiente";
                 return `
                 <li style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f1f5f9;">
-                  <span>• ${itemName(it.item_id)}${it.option_value?` (${it.option_value})`:''} × ${it.qty}${isSupervisor() && st==="pendiente"?` <span style="font-size:10px;">(stock: ${stockLabel(inventory.find(i=>i.id===it.item_id)?.stock ?? 0)})</span>`:''}</span>
+                  <span>• ${itemName(it.item_id)}${it.option_value?` (${it.option_value})`:''} — ${qtyWithUnit(it.qty, inventory.find(i=>i.id===it.item_id)?.unit)}${isSupervisor() && st==="pendiente"?` <span style="font-size:10px;">(stock: ${stockLabel(inventory.find(i=>i.id===it.item_id)?.stock ?? 0)})</span>`:''}</span>
                   ${isSupervisor() && st==="pendiente" ? `
                     <span style="display:flex;gap:4px;">
                       <button data-item-action="autorizado" data-item-id="${it.id}" data-sol-id="${s.id}" style="border:none;background:${STATUS.autorizadas.hex};color:#fff;border-radius:6px;padding:3px 7px;font-size:10px;font-weight:700;cursor:pointer;">Aprobar</button>
@@ -994,7 +1017,7 @@ function renderFormModal(){
             <div class="name">${item.name}</div>
             ${!isSupervisor() ? "" : `<div class="stock">Stock: ${stockLabel(item.stock)} ${item.unit}</div>`}
           </div>
-          ${active ? `<div class="qty-ctrl"><button data-qty-dec="${item.id}">−</button><span>${sel.qty}</span><button data-qty-inc="${item.id}">+</button></div>` : ""}
+          ${active ? `<div class="qty-ctrl"><button data-qty-dec="${item.id}">−</button><input type="text" inputmode="numeric" data-qty-input="${item.id}" value="${sel.qty}" style="width:34px;text-align:center;border:1px solid #e2e8f0;border-radius:6px;font-weight:700;font-size:13px;padding:2px 0;" /><button data-qty-inc="${item.id}">+</button></div>` : ""}
           ${active && needsOption ? `
             <div style="width:100%;margin-top:8px;">
               <select data-option-select="${item.id}" style="width:100%;border:1px solid ${missingOption?'#E4572E':'#e2e8f0'};border-radius:10px;padding:8px;font-size:13px;font-family:inherit;">
@@ -1141,6 +1164,7 @@ function exportInventoryHistory(){
   const rows = inventoryMovements.map(m => ({
     Fecha: m.created_at, Artículo: m.item_name,
     Tipo: m.change_type==='ajuste'?'Ajuste manual':m.change_type==='carga'?'Carga de stock':'Edición de artículo',
+    Detalle: movementLabel(m).split(": ")[1] || "",
     "Stock anterior": m.qty_before, "Stock nuevo": m.qty_after, Responsable: m.admin_name || "",
   }));
   const ws = XLSX.utils.json_to_sheet(rows);
@@ -1159,7 +1183,7 @@ function renderInventoryHistoryModal(){
         inventoryMovements.map(m => `
         <div class="card" style="margin-bottom:8px;">
           <div style="font-weight:700;font-size:13px;color:#1e293b;">${m.item_name}</div>
-          <div style="font-size:12px;color:#475569;">${m.change_type==='ajuste'?'Ajuste manual':m.change_type==='carga'?'Carga de stock':'Edición de artículo'}: ${m.qty_before} → ${m.qty_after}</div>
+          <div style="font-size:12px;color:#475569;">${movementLabel(m)}</div>
           <div style="font-size:11px;color:#94a3b8;">${m.admin_name || ''} · ${new Date(m.created_at).toLocaleString('es-CL')}</div>
         </div>
       `).join("")}
@@ -1271,6 +1295,10 @@ function attachAppEvents(){
   document.querySelectorAll("[data-toggle]").forEach(el=>el.addEventListener("click", ()=>toggleFormItem(el.dataset.toggle)));
   document.querySelectorAll("[data-qty-inc]").forEach(el=>el.addEventListener("click", ()=>setFormQty(el.dataset.qtyInc, (formSelection[el.dataset.qtyInc]?.qty||1)+1)));
   document.querySelectorAll("[data-qty-dec]").forEach(el=>el.addEventListener("click", ()=>setFormQty(el.dataset.qtyDec, (formSelection[el.dataset.qtyDec]?.qty||1)-1)));
+  document.querySelectorAll("[data-qty-input]").forEach(el=>el.addEventListener("change", (e)=>{
+    const v = parseInt(e.target.value, 10);
+    setFormQty(el.dataset.qtyInput, (v && v > 0) ? v : 1);
+  }));
   document.querySelectorAll("[data-option-select]").forEach(el=>el.addEventListener("change", (e)=>setFormOption(el.dataset.optionSelect, e.target.value)));
 
   document.getElementById("open-inventory-history")?.addEventListener("click", openInventoryHistory);
