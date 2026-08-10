@@ -142,6 +142,7 @@ let lastUpdate = "";
 let menuOpen = false, showInventory = false, showForm = false, showNotifs = false, spinning = false;
 let showExportModal = false, exportWorker = "";
 let showUserManagement = false, editingUser = null;
+let showPasswordRequests = false;
 let showInventoryHistory = false, inventoryMovements = [];
 let showAddCargo = false, newCargoName = "", showAddCentroCosto = false, newCentroCostoName = "";
 let stockAddValue = {}; // itemId -> string del campo "sumar cantidad"
@@ -199,9 +200,31 @@ function isSupervisor(){ return profile && (profile.rol === "supervisor" || prof
 function isAdmin(){ return profile && profile.rol === "administrador"; }
 
 /* ================= AUTH ================= */
+async function checkRecoveryLink(){
+  const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  const searchParams = new URLSearchParams(window.location.search);
+  const isRecoveryHash = hashParams.get("type") === "recovery";
+  const recoveryCode = searchParams.get("type") === "recovery" ? searchParams.get("code") : null;
+
+  if(recoveryCode){
+    const { error } = await sb.auth.exchangeCodeForSession(window.location.href);
+    window.history.replaceState({}, document.title, window.location.pathname);
+    if(!error){ view = "reset_password"; return true; }
+    return false;
+  }
+  if(isRecoveryHash){
+    // Espera un instante a que supabase-js procese el hash y arme la sesión.
+    for(let i=0; i<10; i++){
+      const { data } = await sb.auth.getSession();
+      if(data.session){ view = "reset_password"; window.history.replaceState({}, document.title, window.location.pathname); return true; }
+      await new Promise(r => setTimeout(r, 200));
+    }
+  }
+  return false;
+}
+
 async function initAuth(){
-  // Se registra primero para no perder eventos tempranos (ej. PASSWORD_RECOVERY,
-  // que Supabase dispara apenas procesa el link del correo, al cargar la página).
+  // Aviso de respaldo por si el evento llega después de esta revisión inicial.
   sb.auth.onAuthStateChange(async (event, sess) => {
     session = sess;
     if(event === "PASSWORD_RECOVERY"){
@@ -213,8 +236,9 @@ async function initAuth(){
     if(!session && view !== "reset_password"){ profile = null; view = "login"; render(); }
   });
 
+  const isRecovery = await checkRecoveryLink();
   await loadPublicLists();
-  if(view === "reset_password") return; // ya lo tomó el listener de arriba
+  if(isRecovery || view === "reset_password"){ view = "reset_password"; render(); return; }
   const { data } = await sb.auth.getSession();
   session = data.session;
   if(session){ await loadProfile(); } else { view = "login"; }
@@ -269,11 +293,11 @@ async function doForgot(){
   authError = ""; authOk = "";
   if(!forgotEmail.trim()){ authError = "Ingresa tu correo."; render(); return; }
   authLoading = true; render();
-  const redirectTo = window.location.origin + window.location.pathname;
-  const { error } = await sb.auth.resetPasswordForEmail(forgotEmail.trim(), { redirectTo });
+  const { error } = await sb.from("password_reset_requests").insert({ email: forgotEmail.trim() });
   authLoading = false;
-  if(error){ authError = traducirError(error.message); render(); return; }
-  authOk = "Si el correo existe, te enviamos un link para restablecer tu contraseña.";
+  if(error){ authError = "No se pudo enviar el aviso: " + error.message; render(); return; }
+  authOk = "Se notificó al administrador. Te va a contactar para darte una contraseña nueva.";
+  forgotEmail = "";
   view = "login"; render();
 }
 
@@ -549,6 +573,20 @@ async function deleteItem(id){
 
 /* ---- Gestión de usuarios (admin) ---- */
 let usersList = [];
+let passwordRequests = [];
+async function openPasswordRequests(){
+  menuOpen = false; showPasswordRequests = true; render();
+  const { data } = await sb.from("password_reset_requests").select("*").order("atendido").order("created_at", { ascending:false });
+  passwordRequests = data || [];
+  render();
+}
+function closePasswordRequests(){ showPasswordRequests = false; render(); }
+async function markRequestAtendido(id){
+  await sb.from("password_reset_requests").update({ atendido:true, atendido_at: new Date().toISOString() }).eq("id", id);
+  const { data } = await sb.from("password_reset_requests").select("*").order("atendido").order("created_at", { ascending:false });
+  passwordRequests = data || [];
+  render();
+}
 async function openUserManagement(){
   menuOpen = false; showUserManagement = true; render();
   const { data } = await sb.from("profiles").select("*").order("nombre");
@@ -1024,9 +1062,10 @@ function renderForgotForm(){
   return `
   ${authError?`<div class="auth-error">${authError}</div>`:""}
   ${authOk?`<div class="auth-ok">${authOk}</div>`:""}
+  <p style="font-size:12px;color:#64748b;margin:-4px 0 14px;">Escribe tu correo y le avisamos al administrador para que te asigne una contraseña nueva.</p>
   <label>Correo con el que te registraste</label>
   <input type="email" id="forgot-email" value="${forgotEmail}" />
-  <button class="submit-btn" id="forgot-submit" style="background:#00A0AC;">${authLoading?'<span class="spinner"></span>':'Enviar link de recuperación'}</button>
+  <button class="submit-btn" id="forgot-submit" style="background:#00A0AC;">${authLoading?'<span class="spinner"></span>':'Notificar al administrador'}</button>
   <button class="link-btn" id="back-login">Volver a iniciar sesión</button>
   `;
 }
@@ -1179,6 +1218,7 @@ function renderMainApp(){
     ${rejectModal ? renderRejectModal() : ""}
     ${restockModal ? renderRestockModal() : ""}
     ${showUserManagement ? renderUserManagementModal() : ""}
+    ${showPasswordRequests ? renderPasswordRequestsModal() : ""}
     ${showInventoryHistory ? renderInventoryHistoryModal() : ""}
   `;
   attachAppEvents();
@@ -1198,6 +1238,7 @@ function renderSideMenu(){
       ${isAdmin() ? `<button class="menu-item" id="open-inventory">${ICONS.package} Inventario de EPP</button>` : ""}
       ${isAdmin() ? `<button class="menu-item" id="open-inventory-history">${ICONS.fileTextSmall} Historial de inventario</button>` : ""}
       ${isAdmin() ? `<button class="menu-item" id="open-user-mgmt">${ICONS.user} Gestionar usuarios</button>` : ""}
+      ${isAdmin() ? `<button class="menu-item" id="open-password-requests">🔑 Solicitudes de contraseña</button>` : ""}
       <button class="menu-item" id="logout-btn">${ICONS.logout} Cerrar sesión</button>
     </div>
     <div class="side-backdrop" id="side-backdrop"></div>
@@ -1355,6 +1396,35 @@ function renderItemEditorModal(){
         ` : ""}
       ` : ""}
       <button class="submit-btn" id="save-item-btn" style="background:#00A0AC;">Guardar artículo</button>
+    </div>
+  </div>`;
+}
+
+function renderPasswordRequestsModal(){
+  const pendientes = passwordRequests.filter(r => !r.atendido);
+  const atendidas = passwordRequests.filter(r => r.atendido);
+  return `
+  <div class="overlay" id="pwreq-overlay">
+    <div class="sheet">
+      <div class="sheet-head"><h2>🔑 Solicitudes de contraseña</h2><button class="icon-btn" id="pwreq-close">${ICONS.x}</button></div>
+      ${passwordRequests.length===0 ? `<p style="color:#94a3b8;font-size:13px;text-align:center;padding:20px 0;">Sin solicitudes</p>` : ""}
+      ${pendientes.length>0 ? `<label>Pendientes</label>` : ""}
+      ${pendientes.map(r => `
+        <div class="card" style="margin-bottom:8px;">
+          <div style="font-weight:700;font-size:13px;color:#1e293b;">${r.email}</div>
+          <div class="date" style="margin-bottom:8px;">${new Date(r.created_at).toLocaleString('es-CL')}</div>
+          <button data-atender-req="${r.id}" style="background:#00A0AC;color:#fff;border:none;border-radius:10px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer;">Marcar como atendida</button>
+        </div>
+      `).join("")}
+      ${atendidas.length>0 ? `<label style="margin-top:10px;">Atendidas</label>` : ""}
+      ${atendidas.map(r => `
+        <div class="card" style="margin-bottom:8px;opacity:.6;">
+          <div style="font-weight:700;font-size:13px;color:#1e293b;">${r.email}</div>
+          <div class="date">Pedida: ${new Date(r.created_at).toLocaleString('es-CL')}</div>
+          <div class="date">Atendida: ${r.atendido_at ? new Date(r.atendido_at).toLocaleString('es-CL') : ''}</div>
+        </div>
+      `).join("")}
+      <p style="font-size:11px;color:#94a3b8;margin-top:14px;">Para cambiarle la contraseña: Supabase → Authentication → Users → busca el correo → editar contraseña.</p>
     </div>
   </div>`;
 }
@@ -1579,6 +1649,10 @@ function attachAppEvents(){
   document.getElementById("invhist-export-btn")?.addEventListener("click", exportInventoryHistory);
 
   document.getElementById("open-user-mgmt")?.addEventListener("click", openUserManagement);
+  document.getElementById("open-password-requests")?.addEventListener("click", openPasswordRequests);
+  document.getElementById("pwreq-close")?.addEventListener("click", closePasswordRequests);
+  document.getElementById("pwreq-overlay")?.addEventListener("click", (e)=>{ if(e.target.id==="pwreq-overlay") closePasswordRequests(); });
+  document.querySelectorAll("[data-atender-req]").forEach(el=>el.addEventListener("click", ()=>markRequestAtendido(el.dataset.atenderReq)));
   document.getElementById("usermgmt-close")?.addEventListener("click", closeUserManagement);
   document.getElementById("usermgmt-overlay")?.addEventListener("click", (e)=>{ if(e.target.id==="usermgmt-overlay") closeUserManagement(); });
   document.querySelectorAll("[data-start-edit-user]").forEach(el=>el.addEventListener("click", ()=>startEditUser(el.dataset.startEditUser)));
