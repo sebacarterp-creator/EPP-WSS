@@ -200,11 +200,8 @@ function isAdmin(){ return profile && profile.rol === "administrador"; }
 
 /* ================= AUTH ================= */
 async function initAuth(){
-  await loadPublicLists();
-  const { data } = await sb.auth.getSession();
-  session = data.session;
-  if(session){ await loadProfile(); } else { view = "login"; }
-  render();
+  // Se registra primero para no perder eventos tempranos (ej. PASSWORD_RECOVERY,
+  // que Supabase dispara apenas procesa el link del correo, al cargar la página).
   sb.auth.onAuthStateChange(async (event, sess) => {
     session = sess;
     if(event === "PASSWORD_RECOVERY"){
@@ -213,8 +210,15 @@ async function initAuth(){
       return;
     }
     if(session && !profile && view !== "reset_password"){ await loadProfile(); view = "app"; await loadAll(); render(); }
-    if(!session){ profile = null; view = "login"; render(); }
+    if(!session && view !== "reset_password"){ profile = null; view = "login"; render(); }
   });
+
+  await loadPublicLists();
+  if(view === "reset_password") return; // ya lo tomó el listener de arriba
+  const { data } = await sb.auth.getSession();
+  session = data.session;
+  if(session){ await loadProfile(); } else { view = "login"; }
+  render();
 }
 
 async function loadPublicLists(){
