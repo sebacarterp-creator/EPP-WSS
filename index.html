@@ -136,6 +136,7 @@ let cargos = [], centrosCosto = [], empresaContrato = "";
 
 let tab = "espera";
 let solicitudes = [], inventory = [], notifications = [];
+let itemSizes = {}; // { itemId: { optionValue: stock } }
 let lastUpdate = "";
 let menuOpen = false, showInventory = false, showForm = false, showNotifs = false, spinning = false;
 let showExportModal = false, exportWorker = "";
@@ -144,6 +145,7 @@ let showInventoryHistory = false, inventoryMovements = [];
 let showAddCargo = false, newCargoName = "", showAddCentroCosto = false, newCentroCostoName = "";
 let stockAddValue = {}; // itemId -> string del campo "sumar cantidad"
 let rejectModal = null; // { solicitudId, itemId, motivo }
+let restockModal = null; // { itemId, values: { optionValue: string } }
 let formSelection = {}, formMotivo = "", formFotoFile = null, formFotoPreview = null;
 const TALLA_OPTIONS = ["S","M","L","XL","XXL"];
 const NUMERO_OPTIONS = Array.from({length:12}, (_,i)=> String(34+i));
@@ -277,6 +279,21 @@ async function loadAll(){
 async function loadInventory(){
   const { data } = await sb.from("epp_items").select("*").order("name");
   inventory = data || [];
+  const { data: sizes } = await sb.from("epp_item_sizes").select("*");
+  itemSizes = {};
+  (sizes||[]).forEach(row => {
+    if(!itemSizes[row.item_id]) itemSizes[row.item_id] = {};
+    itemSizes[row.item_id][row.option_value] = row.stock;
+  });
+}
+function sizeStock(itemId, optionValue){
+  return itemSizes[itemId]?.[optionValue] ?? 0;
+}
+function totalStock(item){
+  if(item.options && item.options.length){
+    return item.options.reduce((sum,ov) => sum + sizeStock(item.id, ov), 0);
+  }
+  return item.stock;
 }
 
 async function loadSolicitudes(){
@@ -362,10 +379,18 @@ async function adjustStock(id, delta){
   await logMovement(id, item.name, "ajuste", before, after);
   await loadInventory(); render();
 }
-async function logMovement(itemId, itemName, type, before, after){
+async function adjustSizeStock(itemId, optionValue, delta){
+  const item = inventory.find(i=>i.id===itemId);
+  const before = sizeStock(itemId, optionValue);
+  const after = Math.max(0, before + delta);
+  await sb.from("epp_item_sizes").upsert({ item_id:itemId, option_value:optionValue, stock:after });
+  await logMovement(itemId, `${item.name} (${optionValue})`, "ajuste", before, after, optionValue);
+  await loadInventory(); render();
+}
+async function logMovement(itemId, itemName, type, before, after, optionValue=null){
   await sb.from("inventory_movements").insert({
     item_id: itemId, item_name: itemName, admin_id: session.user.id, admin_name: profile.nombre,
-    change_type: type, qty_before: before, qty_after: after,
+    change_type: type, qty_before: before, qty_after: after, option_value: optionValue,
   });
 }
 function setStockAddValue(id, val){ stockAddValue[id] = val; }
@@ -379,6 +404,26 @@ async function applyStockAdd(id){
   stockAddValue[id] = "";
   await loadInventory(); render();
 }
+
+/* ---- Reposición de varias tallas/números a la vez ---- */
+function openRestockModal(itemId){ restockModal = { itemId, values:{} }; render(); }
+function closeRestockModal(){ restockModal = null; render(); }
+function setRestockValue(optionValue, val){ restockModal.values[optionValue] = val; }
+async function submitRestock(){
+  const item = inventory.find(i=>i.id===restockModal.itemId);
+  const entries = Object.entries(restockModal.values).filter(([,v]) => v && parseInt(v,10) > 0);
+  if(entries.length === 0){ closeRestockModal(); return; }
+  for(const [optionValue, v] of entries){
+    const amount = parseInt(v,10);
+    const before = sizeStock(item.id, optionValue);
+    const after = before + amount;
+    await sb.from("epp_item_sizes").upsert({ item_id:item.id, option_value:optionValue, stock:after });
+    await logMovement(item.id, `${item.name} (${optionValue})`, "carga", before, after, optionValue);
+  }
+  restockModal = null;
+  await loadInventory(); render();
+}
+
 async function openInventoryHistory(){
   menuOpen = false; showInventoryHistory = true; render();
   const { data } = await sb.from("inventory_movements").select("*").order("created_at", { ascending:false }).limit(300);
@@ -388,28 +433,31 @@ async function openInventoryHistory(){
 function closeInventoryHistory(){ showInventoryHistory = false; render(); }
 
 function openNewItemEditor(){
-  itemEditor = { id:null, name:"", unit:"unidad", stock:0, requiresOption:false, optionType:"talla", selected:new Set() };
+  itemEditor = { id:null, name:"", unit:"unidad", stock:0, requiresOption:false, optionType:"talla", selected:new Set(), sizeStocks:{} };
   render();
 }
 function openEditItemEditor(id){
   const item = inventory.find(i=>i.id===id);
   const isNumero = (item.option_label||"").toLowerCase().includes("número") || (item.option_label||"").toLowerCase().includes("numero");
+  const sizeStocks = {};
+  (item.options||[]).forEach(ov => sizeStocks[ov] = String(sizeStock(item.id, ov)));
   itemEditor = {
     id: item.id, name: item.name, unit: item.unit, stock: item.stock, originalStock: item.stock,
     requiresOption: !!item.options, optionType: isNumero ? "numero" : "talla",
-    selected: new Set(item.options || []),
+    selected: new Set(item.options || []), sizeStocks,
   };
   render();
 }
 function closeItemEditor(){ itemEditor = null; render(); }
 function setEditorField(field, value){ itemEditor[field] = value; }
 function setEditorRequires(val){ itemEditor.requiresOption = val; render(); }
-function setEditorOptionType(type){ itemEditor.optionType = type; itemEditor.selected = new Set(); render(); }
+function setEditorOptionType(type){ itemEditor.optionType = type; itemEditor.selected = new Set(); itemEditor.sizeStocks = {}; render(); }
 function toggleEditorSize(val){
   if(itemEditor.selected.has(val)) itemEditor.selected.delete(val);
-  else itemEditor.selected.add(val);
+  else { itemEditor.selected.add(val); if(itemEditor.sizeStocks[val] === undefined) itemEditor.sizeStocks[val] = "0"; }
   render();
 }
+function setEditorSizeStock(val, stockVal){ itemEditor.sizeStocks[val] = stockVal; }
 async function saveItemEditor(){
   if(!itemEditor.name.trim()){ alert("Ponle un nombre al artículo."); return; }
   if(itemEditor.requiresOption && itemEditor.selected.size === 0){ alert("Marca al menos una talla/número."); return; }
@@ -418,18 +466,36 @@ async function saveItemEditor(){
   const options = itemEditor.requiresOption
     ? Array.from(itemEditor.selected).sort((a,b) => referenceList.indexOf(a) - referenceList.indexOf(b))
     : null;
-  const payload = { name: itemEditor.name.trim(), unit: itemEditor.unit.trim() || "unidad", stock: Number(itemEditor.stock) || 0, option_label, options };
+  const totalDeTallas = options ? options.reduce((sum,ov) => sum + (parseInt(itemEditor.sizeStocks[ov],10)||0), 0) : null;
+  const payload = {
+    name: itemEditor.name.trim(), unit: itemEditor.unit.trim() || "unidad",
+    stock: itemEditor.requiresOption ? totalDeTallas : (Number(itemEditor.stock) || 0),
+    option_label, options,
+  };
 
-  if(itemEditor.id){
-    await sb.from("epp_items").update(payload).eq("id", itemEditor.id);
-    if(Number(itemEditor.stock) !== itemEditor.originalStock){
-      await logMovement(itemEditor.id, payload.name, "edicion", itemEditor.originalStock, Number(itemEditor.stock));
+  let itemId = itemEditor.id;
+  if(itemId){
+    await sb.from("epp_items").update(payload).eq("id", itemId);
+    if(!itemEditor.requiresOption && Number(itemEditor.stock) !== itemEditor.originalStock){
+      await logMovement(itemId, payload.name, "edicion", itemEditor.originalStock, Number(itemEditor.stock));
     }
   } else {
-    const id = itemEditor.name.trim().toLowerCase().replace(/[^a-z0-9]+/g,"-").slice(0,40) + "-" + Date.now().toString(36);
-    await sb.from("epp_items").insert({ id, ...payload });
-    if(payload.stock > 0) await logMovement(id, payload.name, "carga", 0, payload.stock);
+    itemId = itemEditor.name.trim().toLowerCase().replace(/[^a-z0-9]+/g,"-").slice(0,40) + "-" + Date.now().toString(36);
+    await sb.from("epp_items").insert({ id: itemId, ...payload });
+    if(!itemEditor.requiresOption && payload.stock > 0) await logMovement(itemId, payload.name, "carga", 0, payload.stock);
   }
+
+  if(itemEditor.requiresOption && options){
+    for(const ov of options){
+      const newStock = parseInt(itemEditor.sizeStocks[ov],10) || 0;
+      const before = sizeStock(itemId, ov);
+      if(before !== newStock){
+        await sb.from("epp_item_sizes").upsert({ item_id:itemId, option_value:ov, stock:newStock });
+        await logMovement(itemId, `${payload.name} (${ov})`, "edicion", before, newStock, ov);
+      }
+    }
+  }
+
   itemEditor = null;
   await loadInventory(); render();
 }
@@ -1018,7 +1084,7 @@ function renderMainApp(){
                 const st = it.status || "pendiente";
                 return `
                 <li style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f1f5f9;">
-                  <span>• ${itemName(it.item_id)}${it.option_value?` (${it.option_value})`:''} — ${qtyWithUnit(it.qty, inventory.find(i=>i.id===it.item_id)?.unit)}${isSupervisor() && st==="pendiente"?` <span style="font-size:10px;">(stock: ${stockLabel(inventory.find(i=>i.id===it.item_id)?.stock ?? 0)})</span>`:''}</span>
+                  <span>• ${itemName(it.item_id)}${it.option_value?` (${it.option_value})`:''} — ${qtyWithUnit(it.qty, inventory.find(i=>i.id===it.item_id)?.unit)}${isSupervisor() && st==="pendiente"?` <span style="font-size:10px;">(stock: ${stockLabel(it.option_value ? sizeStock(it.item_id, it.option_value) : (inventory.find(i=>i.id===it.item_id)?.stock ?? 0))})</span>`:''}</span>
                   ${isSupervisor() && st==="pendiente" ? `
                     <span style="display:flex;gap:4px;">
                       <button data-item-action="autorizado" data-item-id="${it.id}" data-sol-id="${s.id}" style="border:none;background:${STATUS.autorizadas.hex};color:#fff;border-radius:6px;padding:3px 7px;font-size:10px;font-weight:700;cursor:pointer;">Aprobar</button>
@@ -1049,6 +1115,7 @@ function renderMainApp(){
     ${showExportModal ? renderExportModal() : ""}
     ${itemEditor ? renderItemEditorModal() : ""}
     ${rejectModal ? renderRejectModal() : ""}
+    ${restockModal ? renderRestockModal() : ""}
     ${showUserManagement ? renderUserManagementModal() : ""}
     ${showInventoryHistory ? renderInventoryHistoryModal() : ""}
   `;
@@ -1090,7 +1157,7 @@ function renderFormModal(){
         <div class="item-row ${active?'active':''}">
           <div data-toggle="${item.id}" style="flex:1;cursor:pointer;">
             <div class="name">${item.name}</div>
-            ${!isSupervisor() ? "" : `<div class="stock">Stock: ${stockLabel(item.stock)} ${item.unit}</div>`}
+            ${!isSupervisor() ? "" : `<div class="stock">Stock: ${stockLabel(needsOption ? (sel?.option ? sizeStock(item.id, sel.option) : totalStock(item)) : item.stock)} ${item.unit}${needsOption && !sel?.option ? ' (total)' : ''}</div>`}
           </div>
           ${active ? `<div class="qty-ctrl"><button data-qty-dec="${item.id}">−</button><input type="text" inputmode="numeric" data-qty-input="${item.id}" value="${sel.qty}" style="width:34px;text-align:center;border:1px solid #e2e8f0;border-radius:6px;font-weight:700;font-size:13px;padding:2px 0;" /><button data-qty-inc="${item.id}">+</button></div>` : ""}
           ${active && needsOption ? `
@@ -1120,22 +1187,62 @@ function renderInventoryModal(){
       ${inventory.map(item => `
         <div class="item-row" style="flex-direction:column;align-items:stretch;">
           <div style="display:flex;align-items:center;">
-            <div style="flex:1;"><div class="name">${item.name}</div><div class="stock">${item.unit}${item.option_label?` · ${item.option_label} (${(item.options||[]).join(', ')})`:''}</div></div>
-            <div class="qty-ctrl">
-              <button data-stock-dec="${item.id}">−</button><span>${stockLabel(item.stock)}</span><button data-stock-inc="${item.id}">+</button>
-            </div>
+            <div style="flex:1;"><div class="name">${item.name}</div><div class="stock">${item.unit}${item.option_label?` · ${item.option_label}`:''}</div></div>
+            ${item.options ? `
+              <div style="font-size:12px;font-weight:800;color:#334155;background:#f1f5f9;padding:4px 10px;border-radius:20px;white-space:nowrap;">Total: ${totalStock(item)} ${pluralizeUnit(item.unit, totalStock(item))}</div>
+            ` : `
+              <div class="qty-ctrl">
+                <button data-stock-dec="${item.id}">−</button><span>${stockLabel(item.stock)}</span><button data-stock-inc="${item.id}">+</button>
+              </div>
+            `}
             <div style="display:flex;gap:6px;margin-left:8px;">
               <button data-edit-item="${item.id}" style="border:none;background:#f1f5f9;border-radius:8px;width:28px;height:28px;cursor:pointer;font-size:14px;">✎</button>
               <button data-delete-item="${item.id}" style="border:none;background:#fdeae4;color:#c0391a;border-radius:8px;width:28px;height:28px;cursor:pointer;font-size:14px;">🗑</button>
             </div>
           </div>
-          <div style="display:flex;gap:6px;margin-top:8px;">
-            <input type="text" inputmode="numeric" placeholder="Cantidad a sumar" data-stock-add-input="${item.id}" value="${stockAddValue[item.id]||''}" style="flex:1;margin-bottom:0;padding:7px 10px;font-size:12px;" />
-            <button data-stock-add-btn="${item.id}" style="background:#00A0AC;color:#fff;border:none;border-radius:10px;padding:0 12px;font-size:12px;font-weight:700;cursor:pointer;">Sumar</button>
-          </div>
+
+          ${item.options ? `
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:10px;">
+              ${item.options.map(ov => { const st = sizeStock(item.id, ov); return `
+                <div style="border:1px solid #e2e8f0;border-radius:10px;padding:6px 4px;text-align:center;">
+                  <div style="font-size:10px;color:#94a3b8;font-weight:700;">${ov}</div>
+                  <div style="font-size:14px;font-weight:800;margin:2px 0;">${stockLabel(st)}</div>
+                  <div style="display:flex;align-items:center;justify-content:center;gap:4px;">
+                    <button data-size-dec="${item.id}" data-size-value="${ov}" style="width:18px;height:18px;border-radius:50%;border:none;background:#f1f5f9;font-size:11px;font-weight:700;cursor:pointer;line-height:1;">−</button>
+                    <button data-size-inc="${item.id}" data-size-value="${ov}" style="width:18px;height:18px;border-radius:50%;border:none;background:#f1f5f9;font-size:11px;font-weight:700;cursor:pointer;line-height:1;">+</button>
+                  </div>
+                </div>
+              `; }).join("")}
+            </div>
+            <button data-open-restock="${item.id}" style="background:#00A0AC;color:#fff;border:none;border-radius:10px;padding:8px;font-size:12px;font-weight:700;cursor:pointer;width:100%;margin-top:10px;">+ Reponer stock</button>
+          ` : `
+            <div style="display:flex;gap:6px;margin-top:8px;">
+              <input type="text" inputmode="numeric" placeholder="Cantidad a sumar" data-stock-add-input="${item.id}" value="${stockAddValue[item.id]||''}" style="flex:1;margin-bottom:0;padding:7px 10px;font-size:12px;" />
+              <button data-stock-add-btn="${item.id}" style="background:#00A0AC;color:#fff;border:none;border-radius:10px;padding:0 12px;font-size:12px;font-weight:700;cursor:pointer;">Sumar</button>
+            </div>
+          `}
         </div>
       `).join("")}
       <button class="submit-btn" id="new-item-btn" style="background:#00A0AC;margin-top:10px;">+ Agregar artículo</button>
+    </div>
+  </div>`;
+}
+
+function renderRestockModal(){
+  const item = inventory.find(i=>i.id===restockModal.itemId);
+  return `
+  <div class="overlay" id="restock-overlay">
+    <div class="sheet">
+      <div class="sheet-head"><h2>Reponer stock — ${item.name}</h2><button class="icon-btn" id="restock-close">${ICONS.x}</button></div>
+      <p style="font-size:11px;color:#94a3b8;margin:-8px 0 14px;">Escribe cuánto quieres sumar a cada talla/número (se suma a lo que ya hay). Deja en blanco las que no cambian.</p>
+      ${item.options.map(ov => `
+        <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #f1f5f9;padding:8px 0;">
+          <label style="font-size:13px;font-weight:700;color:#1e293b;width:60px;">${ov}</label>
+          <span style="font-size:11px;color:#94a3b8;flex:1;">tiene ${sizeStock(item.id, ov)}</span>
+          <input type="text" inputmode="numeric" placeholder="+0" data-restock-input="${ov}" value="${restockModal.values[ov]||''}" style="width:70px;border:1px solid #e2e8f0;border-radius:8px;padding:6px;text-align:center;font-size:13px;margin-bottom:0;" />
+        </div>
+      `).join("")}
+      <button class="submit-btn" id="restock-submit-btn" style="background:#00A0AC;">Guardar reposición</button>
     </div>
   </div>`;
 }
@@ -1151,7 +1258,7 @@ function renderItemEditorModal(){
       <input type="text" id="ie-name" value="${e.name}" />
       <div style="display:flex;gap:10px;">
         <div style="flex:1;"><label>Unidad</label><input type="text" id="ie-unit" value="${e.unit}" /></div>
-        <div style="flex:1;"><label>Stock</label><input type="text" id="ie-stock" value="${e.stock}" /></div>
+        ${!e.requiresOption ? `<div style="flex:1;"><label>Stock</label><input type="text" id="ie-stock" value="${e.stock}" /></div>` : ""}
       </div>
       <label>¿Requiere talla o número?</label>
       <div class="role-toggle" style="margin-bottom:14px;">
@@ -1172,6 +1279,17 @@ function renderItemEditorModal(){
             </label>
           `).join("")}
         </div>
+        ${e.selected.size > 0 ? `
+          <label>Stock de cada una</label>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px;">
+            ${Array.from(e.selected).sort((a,b)=>sizeList.indexOf(a)-sizeList.indexOf(b)).map(v => `
+              <div>
+                <div style="font-size:10px;color:#94a3b8;font-weight:700;margin-bottom:3px;">${v}</div>
+                <input type="text" inputmode="numeric" data-editor-size-stock="${v}" value="${e.sizeStocks[v]??'0'}" style="width:100%;border:1px solid #e2e8f0;border-radius:8px;padding:6px;text-align:center;font-size:13px;margin-bottom:0;" />
+              </div>
+            `).join("")}
+          </div>
+        ` : ""}
       ` : ""}
       <button class="submit-btn" id="save-item-btn" style="background:#00A0AC;">Guardar artículo</button>
     </div>
@@ -1332,6 +1450,14 @@ function attachAppEvents(){
   document.querySelectorAll("[data-stock-dec]").forEach(el=>el.addEventListener("click", ()=>adjustStock(el.dataset.stockDec, -1)));
   document.querySelectorAll("[data-stock-add-input]").forEach(el=>el.addEventListener("input", e=>setStockAddValue(el.dataset.stockAddInput, e.target.value)));
   document.querySelectorAll("[data-stock-add-btn]").forEach(el=>el.addEventListener("click", ()=>applyStockAdd(el.dataset.stockAddBtn)));
+  document.querySelectorAll("[data-size-inc]").forEach(el=>el.addEventListener("click", ()=>adjustSizeStock(el.dataset.sizeInc, el.dataset.sizeValue, 1)));
+  document.querySelectorAll("[data-size-dec]").forEach(el=>el.addEventListener("click", ()=>adjustSizeStock(el.dataset.sizeDec, el.dataset.sizeValue, -1)));
+  document.querySelectorAll("[data-open-restock]").forEach(el=>el.addEventListener("click", ()=>openRestockModal(el.dataset.openRestock)));
+
+  document.getElementById("restock-close")?.addEventListener("click", closeRestockModal);
+  document.getElementById("restock-overlay")?.addEventListener("click", (e)=>{ if(e.target.id==="restock-overlay") closeRestockModal(); });
+  document.getElementById("restock-submit-btn")?.addEventListener("click", submitRestock);
+  document.querySelectorAll("[data-restock-input]").forEach(el=>el.addEventListener("input", e=>setRestockValue(el.dataset.restockInput, e.target.value)));
 
   document.getElementById("item-editor-close")?.addEventListener("click", closeItemEditor);
   document.getElementById("item-editor-overlay")?.addEventListener("click", (e)=>{ if(e.target.id==="item-editor-overlay") closeItemEditor(); });
@@ -1343,6 +1469,7 @@ function attachAppEvents(){
   document.querySelectorAll("[data-requires]").forEach(el=>el.addEventListener("click", ()=>setEditorRequires(el.dataset.requires==="si")));
   document.querySelectorAll("[data-opttype]").forEach(el=>el.addEventListener("click", ()=>setEditorOptionType(el.dataset.opttype)));
   document.querySelectorAll("[data-size-check]").forEach(el=>el.addEventListener("change", ()=>toggleEditorSize(el.dataset.sizeCheck)));
+  document.querySelectorAll("[data-editor-size-stock]").forEach(el=>el.addEventListener("input", e=>setEditorSizeStock(el.dataset.editorSizeStock, e.target.value)));
 
   document.getElementById("form-close")?.addEventListener("click", closeForm);
   document.getElementById("form-overlay")?.addEventListener("click", (e)=>{ if(e.target.id==="form-overlay") closeForm(); });
