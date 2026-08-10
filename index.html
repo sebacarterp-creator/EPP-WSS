@@ -132,6 +132,7 @@ let authError = "", authOk = "", authLoading = false;
 let signupData = { nombre:"", rut:"", centro_costo:"", cargo:"", grupo:"", email:"", password:"" };
 let loginData = { email:"", password:"" };
 let forgotEmail = "";
+let newPasswordValue = "", newPasswordConfirm = "";
 let cargos = [], centrosCosto = [], empresaContrato = "";
 
 let tab = "espera";
@@ -206,7 +207,12 @@ async function initAuth(){
   render();
   sb.auth.onAuthStateChange(async (event, sess) => {
     session = sess;
-    if(session && !profile){ await loadProfile(); view = "app"; await loadAll(); render(); }
+    if(event === "PASSWORD_RECOVERY"){
+      view = "reset_password";
+      render();
+      return;
+    }
+    if(session && !profile && view !== "reset_password"){ await loadProfile(); view = "app"; await loadAll(); render(); }
     if(!session){ profile = null; view = "login"; render(); }
   });
 }
@@ -259,11 +265,25 @@ async function doForgot(){
   authError = ""; authOk = "";
   if(!forgotEmail.trim()){ authError = "Ingresa tu correo."; render(); return; }
   authLoading = true; render();
-  const { error } = await sb.auth.resetPasswordForEmail(forgotEmail.trim());
+  const redirectTo = window.location.origin + window.location.pathname;
+  const { error } = await sb.auth.resetPasswordForEmail(forgotEmail.trim(), { redirectTo });
   authLoading = false;
   if(error){ authError = traducirError(error.message); render(); return; }
   authOk = "Si el correo existe, te enviamos un link para restablecer tu contraseña.";
   view = "login"; render();
+}
+
+async function submitNewPassword(){
+  authError = "";
+  if(newPasswordValue.length < 6){ authError = "La contraseña debe tener mínimo 6 caracteres."; render(); return; }
+  if(newPasswordValue !== newPasswordConfirm){ authError = "Las contraseñas no coinciden."; render(); return; }
+  authLoading = true; render();
+  const { error } = await sb.auth.updateUser({ password: newPasswordValue });
+  authLoading = false;
+  if(error){ authError = traducirError(error.message); render(); return; }
+  newPasswordValue = ""; newPasswordConfirm = "";
+  authOk = "Contraseña actualizada. Ya puedes usar la app.";
+  await loadProfile(); view = "app"; await loadAll(); render();
 }
 
 function traducirError(msg){
@@ -929,6 +949,7 @@ function render(){
   if(view === "login"){ app.innerHTML = renderAuthShell(renderLoginForm()); attachAuthEvents(); return; }
   if(view === "signup"){ app.innerHTML = renderAuthShell(renderSignupForm()); attachAuthEvents(); return; }
   if(view === "forgot"){ app.innerHTML = renderAuthShell(renderForgotForm()); attachAuthEvents(); return; }
+  if(view === "reset_password"){ app.innerHTML = renderAuthShell(renderResetPasswordForm()); attachAuthEvents(); return; }
   renderMainApp();
 
   if(savedSheetScroll !== null){
@@ -1006,6 +1027,18 @@ function renderForgotForm(){
   `;
 }
 
+function renderResetPasswordForm(){
+  return `
+  ${authError?`<div class="auth-error">${authError}</div>`:""}
+  ${authOk?`<div class="auth-ok">${authOk}</div>`:""}
+  <label>Nueva contraseña</label>
+  <input type="password" id="newpass-1" placeholder="Mínimo 6 caracteres" value="${newPasswordValue}" />
+  <label>Repite la nueva contraseña</label>
+  <input type="password" id="newpass-2" placeholder="Repite la contraseña" value="${newPasswordConfirm}" />
+  <button class="submit-btn" id="newpass-submit" style="background:#00A0AC;">${authLoading?'<span class="spinner"></span>':'Guardar contraseña'}</button>
+  `;
+}
+
 function attachAuthEvents(){
   document.querySelectorAll("[data-authtab]").forEach(el=>el.addEventListener("click", ()=>{ view = el.dataset.authtab; authError=""; authOk=""; render(); }));
   document.getElementById("go-forgot")?.addEventListener("click", ()=>{ view="forgot"; authError=""; authOk=""; render(); });
@@ -1029,6 +1062,11 @@ function attachAuthEvents(){
   const fe = document.getElementById("forgot-email");
   if(fe) fe.addEventListener("input", e=>forgotEmail=e.target.value);
   document.getElementById("forgot-submit")?.addEventListener("click", doForgot);
+
+  const np1 = document.getElementById("newpass-1"), np2 = document.getElementById("newpass-2");
+  if(np1) np1.addEventListener("input", e=>newPasswordValue=e.target.value);
+  if(np2) np2.addEventListener("input", e=>newPasswordConfirm=e.target.value);
+  document.getElementById("newpass-submit")?.addEventListener("click", submitNewPassword);
 }
 
 function renderMainApp(){
