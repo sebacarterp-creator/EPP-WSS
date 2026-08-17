@@ -57,6 +57,9 @@
   .sheet-head h2{font-size:16px;margin:0;color:var(--ink);}
   label{font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:4px;}
   input[type=text],input[type=email],input[type=password],input[type=file],textarea{width:100%;border:1px solid #e2e8f0;border-radius:12px;padding:10px 12px;font-size:14px;margin-bottom:12px;font-family:inherit;}
+  .pw-wrap{position:relative;}
+  .pw-wrap input[type=password],.pw-wrap input[type=text]{padding-right:40px;}
+  .pw-toggle{position:absolute;right:10px;top:0;bottom:12px;height:44px;background:none;border:none;font-size:16px;cursor:pointer;color:#64748b;}
   textarea{resize:vertical;min-height:60px;}
   input:focus,textarea:focus{outline:none;border-color:var(--teal);}
   .item-row{display:flex;align-items:center;justify-content:space-between;border:1px solid #e2e8f0;border-radius:12px;padding:9px 10px;margin-bottom:8px;flex-wrap:wrap;}
@@ -143,6 +146,8 @@ let menuOpen = false, showInventory = false, showForm = false, showNotifs = fals
 let showExportModal = false, exportWorker = "";
 let showUserManagement = false, editingUser = null;
 let showPasswordRequests = false;
+let showChangePassword = false;
+let changePassValue = "", changePassConfirm = "", changePassError = "", changePassOk = "";
 let showInventoryHistory = false, inventoryMovements = [];
 let showAddCargo = false, newCargoName = "", showAddCentroCosto = false, newCentroCostoName = "";
 let stockAddValue = {}; // itemId -> string del campo "sumar cantidad"
@@ -275,7 +280,7 @@ async function doSignup(){
   });
   authLoading = false;
   if(error){ authError = traducirError(error.message); render(); return; }
-  authOk = "Cuenta creada. Revisa tu correo para confirmar tu cuenta y luego inicia sesión.";
+  authOk = "Cuenta creada. Ya puedes iniciar sesión.";
   view = "login";
   render();
 }
@@ -312,6 +317,13 @@ async function submitNewPassword(){
   newPasswordValue = ""; newPasswordConfirm = "";
   authOk = "Contraseña actualizada. Ya puedes usar la app.";
   await loadProfile(); view = "app"; await loadAll(); render();
+}
+
+function togglePwVisibility(id, btn){
+  const el = document.getElementById(id);
+  if(!el) return;
+  el.type = el.type === "password" ? "text" : "password";
+  btn.textContent = el.type === "password" ? "👁" : "🙈";
 }
 
 function traducirError(msg){
@@ -394,28 +406,14 @@ function formIsComplete(){
   if(entries.length===0) return false;
   return entries.every(([id, sel]) => { const item = inventory.find(i=>i.id===id); return item?.options ? !!sel.option : true; });
 }
-function onFotoChange(e){
-  const file = e.target.files[0];
-  if(!file) return;
-  formFotoFile = file;
-  formFotoPreview = URL.createObjectURL(file);
-  render();
-}
 async function submitForm(){
   if(!formIsComplete()) return;
   const btn = document.getElementById("submit-form");
   if(btn){ btn.disabled = true; btn.textContent = "Enviando..."; }
 
-  let foto_url = null;
-  if(formFotoFile){
-    const path = `${session.user.id}/${Date.now()}_${formFotoFile.name}`;
-    const { error: upErr } = await sb.storage.from("fotos-solicitudes").upload(path, formFotoFile);
-    if(!upErr){ const { data } = sb.storage.from("fotos-solicitudes").getPublicUrl(path); foto_url = data.publicUrl; }
-  }
-
   const { data: sol, error } = await sb.from("solicitudes").insert({
     worker_id: session.user.id, worker_name: profile.nombre, department: profile.centro_costo || "",
-    motivo: formMotivo.trim() || null, foto_url,
+    motivo: formMotivo.trim() || null,
   }).select().single();
 
   if(error){ alert("Error al crear la solicitud: " + error.message); render(); return; }
@@ -585,6 +583,20 @@ async function markRequestAtendido(id){
   await sb.from("password_reset_requests").update({ atendido:true, atendido_at: new Date().toISOString() }).eq("id", id);
   const { data } = await sb.from("password_reset_requests").select("*").order("atendido").order("created_at", { ascending:false });
   passwordRequests = data || [];
+  render();
+}
+
+/* ---- Cambiar mi propia contraseña (cualquier rol, desde el menú) ---- */
+function openChangePassword(){ menuOpen = false; showChangePassword = true; changePassValue=""; changePassConfirm=""; changePassError=""; changePassOk=""; render(); }
+function closeChangePassword(){ showChangePassword = false; render(); }
+async function submitChangePassword(){
+  changePassError = ""; changePassOk = "";
+  if(changePassValue.length < 6){ changePassError = "Mínimo 6 caracteres."; render(); return; }
+  if(changePassValue !== changePassConfirm){ changePassError = "Las contraseñas no coinciden."; render(); return; }
+  const { error } = await sb.auth.updateUser({ password: changePassValue });
+  if(error){ changePassError = traducirError(error.message); render(); return; }
+  changePassValue = ""; changePassConfirm = "";
+  changePassOk = "Contraseña actualizada correctamente.";
   render();
 }
 async function openUserManagement(){
@@ -1019,7 +1031,7 @@ function renderLoginForm(){
   <label>Correo electrónico</label>
   <input type="email" id="login-email" placeholder="tú@correo.com" value="${loginData.email}" />
   <label>Contraseña</label>
-  <input type="password" id="login-password" placeholder="••••••••" value="${loginData.password}" />
+  <div class="pw-wrap"><input type="password" id="login-password" placeholder="••••••••" value="${loginData.password}" /><button type="button" class="pw-toggle" onclick="togglePwVisibility('login-password', this)">👁</button></div>
   <button class="submit-btn" id="login-submit" style="background:#00A0AC;">${authLoading?'<span class="spinner"></span>':'Iniciar sesión'}</button>
   <button class="link-btn" id="go-forgot">¿Olvidaste tu contraseña?</button>
   `;
@@ -1054,7 +1066,7 @@ function renderSignupForm(){
   <label>Correo electrónico</label>
   <input type="email" id="su-email" value="${signupData.email}" />
   <label>Contraseña</label>
-  <input type="password" id="su-password" placeholder="Mínimo 6 caracteres" value="${signupData.password}" />
+  <div class="pw-wrap"><input type="password" id="su-password" placeholder="Mínimo 6 caracteres" value="${signupData.password}" /><button type="button" class="pw-toggle" onclick="togglePwVisibility('su-password', this)">👁</button></div>
   <button class="submit-btn" id="signup-submit" style="background:#00A0AC;">${authLoading?'<span class="spinner"></span>':'Crear cuenta'}</button>
   `;
 }
@@ -1075,9 +1087,9 @@ function renderResetPasswordForm(){
   ${authError?`<div class="auth-error">${authError}</div>`:""}
   ${authOk?`<div class="auth-ok">${authOk}</div>`:""}
   <label>Nueva contraseña</label>
-  <input type="password" id="newpass-1" placeholder="Mínimo 6 caracteres" value="${newPasswordValue}" />
+  <div class="pw-wrap"><input type="password" id="newpass-1" placeholder="Mínimo 6 caracteres" value="${newPasswordValue}" /><button type="button" class="pw-toggle" onclick="togglePwVisibility('newpass-1', this)">👁</button></div>
   <label>Repite la nueva contraseña</label>
-  <input type="password" id="newpass-2" placeholder="Repite la contraseña" value="${newPasswordConfirm}" />
+  <div class="pw-wrap"><input type="password" id="newpass-2" placeholder="Repite la contraseña" value="${newPasswordConfirm}" /><button type="button" class="pw-toggle" onclick="togglePwVisibility('newpass-2', this)">👁</button></div>
   <button class="submit-btn" id="newpass-submit" style="background:#00A0AC;">${authLoading?'<span class="spinner"></span>':'Guardar contraseña'}</button>
   `;
 }
@@ -1219,6 +1231,7 @@ function renderMainApp(){
     ${restockModal ? renderRestockModal() : ""}
     ${showUserManagement ? renderUserManagementModal() : ""}
     ${showPasswordRequests ? renderPasswordRequestsModal() : ""}
+    ${showChangePassword ? renderChangePasswordModal() : ""}
     ${showInventoryHistory ? renderInventoryHistoryModal() : ""}
   `;
   attachAppEvents();
@@ -1239,6 +1252,7 @@ function renderSideMenu(){
       ${isAdmin() ? `<button class="menu-item" id="open-inventory-history">${ICONS.fileTextSmall} Historial de inventario</button>` : ""}
       ${isAdmin() ? `<button class="menu-item" id="open-user-mgmt">${ICONS.user} Gestionar usuarios</button>` : ""}
       ${isAdmin() ? `<button class="menu-item" id="open-password-requests">🔑 Solicitudes de contraseña</button>` : ""}
+      <button class="menu-item" id="open-change-password">🔒 Cambiar contraseña</button>
       <button class="menu-item" id="logout-btn">${ICONS.logout} Cerrar sesión</button>
     </div>
     <div class="side-backdrop" id="side-backdrop"></div>
@@ -1264,6 +1278,7 @@ function renderFormModal(){
             ${!isSupervisor() ? "" : `<div class="stock">Stock: ${stockLabel(needsOption ? (sel?.option ? sizeStock(item.id, sel.option) : totalStock(item)) : item.stock)} ${item.unit}${needsOption && !sel?.option ? ' (total)' : ''}</div>`}
           </div>
           ${active ? `<div class="qty-ctrl"><button data-qty-dec="${item.id}">−</button><input type="text" inputmode="numeric" data-qty-input="${item.id}" value="${sel.qty}" style="width:34px;text-align:center;border:1px solid #e2e8f0;border-radius:6px;font-weight:700;font-size:13px;padding:2px 0;" /><button data-qty-inc="${item.id}">+</button></div>` : ""}
+          ${active ? `<button data-remove-item="${item.id}" title="Quitar" style="border:none;background:#fdeae4;color:#c0391a;border-radius:50%;width:24px;height:24px;font-size:13px;font-weight:700;cursor:pointer;margin-left:6px;">✕</button>` : ""}
           ${active && needsOption ? `
             <div style="width:100%;margin-top:8px;">
               <select data-option-select="${item.id}" style="width:100%;border:1px solid ${missingOption?'#E4572E':'#e2e8f0'};border-radius:10px;padding:8px;font-size:13px;font-family:inherit;">
@@ -1275,9 +1290,6 @@ function renderFormModal(){
       }).join("")}
       <label>Motivo (opcional)</label>
       <textarea id="motivo-input" placeholder="Ej. equipo dañado, primera entrega, etc.">${formMotivo}</textarea>
-      <label style="display:flex;align-items:center;gap:6px;">${ICONS.camera} Foto (opcional)</label>
-      <input type="file" accept="image/*" id="foto-input" />
-      ${formFotoPreview?`<img src="${formFotoPreview}" class="foto-thumb" />`:""}
       <button class="submit-btn" id="submit-form" style="background:${canSubmit?'#00A0AC':'#cbd5e1'}" ${canSubmit?'':'disabled'}>Enviar solicitud</button>
     </div>
   </div>`;
@@ -1396,6 +1408,22 @@ function renderItemEditorModal(){
         ` : ""}
       ` : ""}
       <button class="submit-btn" id="save-item-btn" style="background:#00A0AC;">Guardar artículo</button>
+    </div>
+  </div>`;
+}
+
+function renderChangePasswordModal(){
+  return `
+  <div class="overlay" id="changepass-overlay">
+    <div class="sheet" style="padding-bottom:26px;">
+      <div class="sheet-head"><h2>🔒 Cambiar contraseña</h2><button class="icon-btn" id="changepass-close">${ICONS.x}</button></div>
+      ${changePassError?`<div class="auth-error">${changePassError}</div>`:""}
+      ${changePassOk?`<div class="auth-ok">${changePassOk}</div>`:""}
+      <label>Nueva contraseña</label>
+      <div class="pw-wrap"><input type="password" id="cp-1" placeholder="Mínimo 6 caracteres" value="${changePassValue}" /><button type="button" class="pw-toggle" onclick="togglePwVisibility('cp-1', this)">👁</button></div>
+      <label>Repite la nueva contraseña</label>
+      <div class="pw-wrap"><input type="password" id="cp-2" placeholder="Repite la contraseña" value="${changePassConfirm}" /><button type="button" class="pw-toggle" onclick="togglePwVisibility('cp-2', this)">👁</button></div>
+      <button class="submit-btn" id="cp-submit" style="background:#00A0AC;">Guardar contraseña</button>
     </div>
   </div>`;
 }
@@ -1614,7 +1642,6 @@ function attachAppEvents(){
   document.getElementById("form-overlay")?.addEventListener("click", (e)=>{ if(e.target.id==="form-overlay") closeForm(); });
   document.getElementById("submit-form")?.addEventListener("click", submitForm);
   document.getElementById("motivo-input")?.addEventListener("input", e=>formMotivo=e.target.value);
-  document.getElementById("foto-input")?.addEventListener("change", onFotoChange);
 
   document.querySelectorAll("[data-tab]").forEach(el=>el.addEventListener("click", ()=>setTab(el.dataset.tab)));
   document.querySelectorAll("[data-item-action]").forEach(el=>el.addEventListener("click", ()=>updateItemStatus(el.dataset.solId, el.dataset.itemId, el.dataset.itemAction)));
@@ -1635,6 +1662,7 @@ function attachAppEvents(){
   }));
   document.querySelectorAll("[data-ver-cert]").forEach(el=>el.addEventListener("click", ()=>verCertificado(el.dataset.verCert)));
   document.querySelectorAll("[data-toggle]").forEach(el=>el.addEventListener("click", ()=>toggleFormItem(el.dataset.toggle)));
+  document.querySelectorAll("[data-remove-item]").forEach(el=>el.addEventListener("click", ()=>toggleFormItem(el.dataset.removeItem)));
   document.querySelectorAll("[data-qty-inc]").forEach(el=>el.addEventListener("click", ()=>setFormQty(el.dataset.qtyInc, (formSelection[el.dataset.qtyInc]?.qty||1)+1)));
   document.querySelectorAll("[data-qty-dec]").forEach(el=>el.addEventListener("click", ()=>setFormQty(el.dataset.qtyDec, (formSelection[el.dataset.qtyDec]?.qty||1)-1)));
   document.querySelectorAll("[data-qty-input]").forEach(el=>el.addEventListener("change", (e)=>{
@@ -1650,6 +1678,13 @@ function attachAppEvents(){
 
   document.getElementById("open-user-mgmt")?.addEventListener("click", openUserManagement);
   document.getElementById("open-password-requests")?.addEventListener("click", openPasswordRequests);
+  document.getElementById("open-change-password")?.addEventListener("click", openChangePassword);
+  document.getElementById("changepass-close")?.addEventListener("click", closeChangePassword);
+  document.getElementById("changepass-overlay")?.addEventListener("click", (e)=>{ if(e.target.id==="changepass-overlay") closeChangePassword(); });
+  const cp1 = document.getElementById("cp-1"), cp2 = document.getElementById("cp-2");
+  if(cp1) cp1.addEventListener("input", e=>changePassValue=e.target.value);
+  if(cp2) cp2.addEventListener("input", e=>changePassConfirm=e.target.value);
+  document.getElementById("cp-submit")?.addEventListener("click", submitChangePassword);
   document.getElementById("pwreq-close")?.addEventListener("click", closePasswordRequests);
   document.getElementById("pwreq-overlay")?.addEventListener("click", (e)=>{ if(e.target.id==="pwreq-overlay") closePasswordRequests(); });
   document.querySelectorAll("[data-atender-req]").forEach(el=>el.addEventListener("click", ()=>markRequestAtendido(el.dataset.atenderReq)));
