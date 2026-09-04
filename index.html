@@ -1171,7 +1171,7 @@ function renderDocsScreen(){
       </div>
       <div class="doc-preview">
         <img src="${entry.previewUrl||''}" alt="">
-        <div class="doc-filename">${entry.fileName||''}</div>
+        <div class="doc-filename">${entry.fileName||''}${entry.fileSize ? ' · '+(entry.fileSize/1024).toFixed(0)+' KB' : ''}</div>
         <button type="button" class="doc-remove">Quitar</button>
       </div>
       ${item.hasDate ? `
@@ -1198,6 +1198,7 @@ function renderDocsScreen(){
       try{
         const { file: compFile, dataUrl } = await compressPhoto(file);
         entry.fileName = compFile.name;
+        entry.fileSize = compFile.size;
         entry.previewUrl = dataUrl;
         entry.file = compFile;
         updateDocsScreen();
@@ -3345,7 +3346,7 @@ function renderVehicleDocs(vehicle){
       </div>
       <div class="doc-preview">
         <img src="${entry.previewUrl||''}" alt="">
-        <div class="doc-filename">${entry.fileName||''}</div>
+        <div class="doc-filename">${entry.fileName||''}${entry.fileSize ? ' · '+(entry.fileSize/1024).toFixed(0)+' KB' : ''}</div>
         <button type="button" class="doc-remove">Quitar</button>
       </div>
       ${fields.map(f=>`
@@ -3380,6 +3381,7 @@ function renderVehicleDocs(vehicle){
       try{
         const { file: compFile, dataUrl } = await compressPhoto(file);
         entry.fileName = compFile.name;
+        entry.fileSize = compFile.size;
         entry.previewUrl = dataUrl;
         entry.file = compFile;
         renderVehicleDocs(vehicle);
